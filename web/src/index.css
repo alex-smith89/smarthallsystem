@@ -8,6 +8,7 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
   --primary: #2563eb;
   --primary-dark: #1d4ed8;
   --success: #16a34a;
@@ -232,7 +233,8 @@ code {
 }
 
 .card h3,
-.card h4 {
+.card h4,
+.card h2 {
   margin-top: 0;
   margin-bottom: 10px;
 }
@@ -538,6 +540,7 @@ tbody tr:hover {
   background: #dbeafe;
 }
 
+.pill-active,
 .pill-completed {
   color: #0f766e;
   background: #ccfbf1;
@@ -682,6 +685,81 @@ tbody tr:hover {
   color: var(--muted);
 }
 
+.print-card-grid {
+  display: grid;
+  gap: 20px;
+}
+
+.batch-print-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.student-print-card {
+  border: 2px solid #0f172a;
+  border-radius: 18px;
+  background: #ffffff;
+  padding: 18px;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+.student-print-header {
+  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+}
+
+.student-print-header h2 {
+  margin: 0 0 4px;
+  font-size: 1.25rem;
+}
+
+.student-print-header p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.student-print-body {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 20px;
+  align-items: center;
+}
+
+.student-print-details {
+  display: grid;
+  gap: 8px;
+  font-size: 0.98rem;
+}
+
+.student-print-qr {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.small-muted {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.batch-card {
+  padding: 14px;
+}
+
+.batch-body {
+  grid-template-columns: 1fr auto;
+  gap: 14px;
+}
+
+.no-print {
+  display: flex;
+}
+
 @media (max-width: 1200px) {
   .stats-grid,
   .stats-grid-3 {
@@ -690,11 +768,13 @@ tbody tr:hover {
 
   .charts-grid,
   .report-grid,
-  .scanner-grid {
+  .scanner-grid,
+  .batch-print-grid {
     grid-template-columns: 1fr;
   }
 
-  .qr-box {
+  .qr-box,
+  .student-print-body {
     grid-template-columns: 1fr;
     justify-items: start;
   }
@@ -762,5 +842,60 @@ tbody tr:hover {
 
   .stat-value {
     font-size: 1.7rem;
+  }
+
+  .scanner-box {
+    min-height: 260px;
+  }
+}
+
+@media print {
+  body {
+    background: white;
+  }
+
+  .sidebar,
+  .page-header,
+  .btn,
+  .no-print,
+  .alert,
+  .scanner-grid,
+  .log-list,
+  .responsive-table,
+  .stats-grid,
+  .stats-grid-3,
+  .inline-actions,
+  .inline-filter,
+  .report-actions {
+    display: none !important;
+  }
+
+  .app-shell,
+  .page-shell,
+  .page-content,
+  .page-stack {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .card {
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    margin: 0 0 16px;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .student-print-card {
+    border: 1.5px solid #000;
+    box-shadow: none;
+    border-radius: 10px;
+  }
+
+  .batch-print-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
   }
 }
