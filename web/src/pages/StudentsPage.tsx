@@ -14,6 +14,8 @@ type StudentFormState = {
   isActive: boolean;
 };
 
+type PrintMode = 'single' | 'all' | null;
+
 const initialForm: StudentFormState = {
   fullName: '',
   rollNumber: '',
@@ -25,12 +27,19 @@ const initialForm: StudentFormState = {
 
 export default function StudentsPage() {
   const { user } = useAuth();
+
   const [students, setStudents] = useState<Student[]>([]);
   const [form, setForm] = useState<StudentFormState>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+
   const [previewStudent, setPreviewStudent] = useState<Student | null>(null);
+  const [printMode, setPrintMode] = useState<PrintMode>(null);
+
+  const [searchTerm, setSearchTerm] = useState('');
+
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -59,10 +68,27 @@ export default function StudentsPage() {
     setEditingId(null);
   }
 
+  const filteredStudents = useMemo(() => {
+    const keyword = searchTerm.trim().toLowerCase();
+
+    if (!keyword) return students;
+
+    return students.filter((student) => {
+      return (
+        student.fullName.toLowerCase().includes(keyword) ||
+        student.rollNumber.toLowerCase().includes(keyword) ||
+        student.email.toLowerCase().includes(keyword) ||
+        student.program.toLowerCase().includes(keyword)
+      );
+    });
+  }, [students, searchTerm]);
+
   const activeCount = useMemo(
     () => students.filter((student) => student.isActive).length,
     [students]
   );
+
+  const inactiveCount = students.length - activeCount;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -73,25 +99,20 @@ export default function StudentsPage() {
     setMessage('');
 
     try {
+      const payload = {
+        fullName: form.fullName,
+        rollNumber: form.rollNumber,
+        email: form.email,
+        program: form.program,
+        semester: Number(form.semester),
+        isActive: form.isActive
+      };
+
       if (editingId) {
-        await api.updateStudent(editingId, {
-          fullName: form.fullName,
-          rollNumber: form.rollNumber,
-          email: form.email,
-          program: form.program,
-          semester: Number(form.semester),
-          isActive: form.isActive
-        });
+        await api.updateStudent(editingId, payload);
         setMessage('Student updated successfully.');
       } else {
-        await api.createStudent({
-          fullName: form.fullName,
-          rollNumber: form.rollNumber,
-          email: form.email,
-          program: form.program,
-          semester: Number(form.semester),
-          isActive: form.isActive
-        } as Omit<Student, '_id' | 'qrCodeValue'>);
+        await api.createStudent(payload as Omit<Student, '_id' | 'qrCodeValue'>);
         setMessage('Student created successfully.');
       }
 
@@ -114,6 +135,11 @@ export default function StudentsPage() {
       semester: String(student.semester),
       isActive: student.isActive
     });
+
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
   }
 
   async function handleDelete(studentId: string) {
@@ -131,6 +157,25 @@ export default function StudentsPage() {
     }
   }
 
+  function openSinglePrint(student: Student) {
+    setPreviewStudent(student);
+    setPrintMode('single');
+  }
+
+  function openAllPrint() {
+    setPreviewStudent(null);
+    setPrintMode('all');
+  }
+
+  function closePrintView() {
+    setPrintMode(null);
+    setPreviewStudent(null);
+  }
+
+  function handlePrint() {
+    window.print();
+  }
+
   if (loading) {
     return <LoadingScreen text="Loading students..." />;
   }
@@ -142,13 +187,15 @@ export default function StudentsPage() {
           <p className="stat-label">Total Students</p>
           <h3 className="stat-value">{students.length}</h3>
         </div>
+
         <div className="stat-card">
           <p className="stat-label">Active Students</p>
           <h3 className="stat-value">{activeCount}</h3>
         </div>
+
         <div className="stat-card">
           <p className="stat-label">Inactive Students</p>
-          <h3 className="stat-value">{students.length - activeCount}</h3>
+          <h3 className="stat-value">{inactiveCount}</h3>
         </div>
       </div>
 
@@ -156,9 +203,25 @@ export default function StudentsPage() {
         <div className="card-header-row">
           <div>
             <h3>Student Management</h3>
-            <p>Create, update, and maintain student records with unique QR values.</p>
+            <p>
+              Create, update, search, preview QR, and print student admit slip style QR cards.
+            </p>
           </div>
-          {!canEdit ? <span className="pill pill-completed">Read only for invigilator</span> : null}
+
+          <div className="inline-actions">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={openAllPrint}
+              disabled={students.length === 0}
+            >
+              Print All QR Cards
+            </button>
+
+            {!canEdit ? (
+              <span className="pill pill-completed">Read only for invigilator</span>
+            ) : null}
+          </div>
         </div>
 
         {message ? <div className="alert alert-success">{message}</div> : null}
@@ -233,6 +296,7 @@ export default function StudentsPage() {
               <button className="btn btn-primary" disabled={submitting} type="submit">
                 {submitting ? 'Saving...' : editingId ? 'Update Student' : 'Add Student'}
               </button>
+
               <button type="button" className="btn btn-secondary" onClick={resetForm}>
                 Reset
               </button>
@@ -241,30 +305,27 @@ export default function StudentsPage() {
         </form>
       </div>
 
-      {previewStudent ? (
-        <div className="card qr-preview-card">
-          <div className="card-header-row">
-            <div>
-              <h3>QR Preview</h3>
-              <p>
-                {previewStudent.fullName} ({previewStudent.rollNumber})
-              </p>
-            </div>
-
-            <button className="btn btn-secondary" onClick={() => setPreviewStudent(null)}>
-              Close
-            </button>
+      <div className="card">
+        <div className="card-header-row">
+          <div>
+            <h3>Students List</h3>
+            <p>
+              Search by name, roll number, email, or program. Preview QR or print a student card.
+            </p>
           </div>
 
-          <div className="qr-box">
-            <QRCodeSVG value={previewStudent.qrCodeValue} size={220} includeMargin />
-            <textarea className="mono-text" readOnly value={previewStudent.qrCodeValue} />
+          <div className="inline-filter">
+            <label className="form-field">
+              <span>Search Student</span>
+              <input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search name / roll / email / program"
+              />
+            </label>
           </div>
         </div>
-      ) : null}
 
-      <div className="card">
-        <h3>Students List</h3>
         <div className="responsive-table">
           <table>
             <thead>
@@ -275,12 +336,14 @@ export default function StudentsPage() {
                 <th>Program</th>
                 <th>Semester</th>
                 <th>Status</th>
-                <th>QR</th>
+                <th>QR Preview</th>
+                <th>Print</th>
                 {canEdit ? <th>Actions</th> : null}
               </tr>
             </thead>
+
             <tbody>
-              {students.map((student) => (
+              {filteredStudents.map((student) => (
                 <tr key={student._id}>
                   <td>{student.fullName}</td>
                   <td>{student.rollNumber}</td>
@@ -293,17 +356,39 @@ export default function StudentsPage() {
                     </span>
                   </td>
                   <td>
-                    <button className="btn btn-ghost" onClick={() => setPreviewStudent(student)}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => setPreviewStudent(student)}
+                    >
                       Preview QR
+                    </button>
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => openSinglePrint(student)}
+                    >
+                      Print Card
                     </button>
                   </td>
                   {canEdit ? (
                     <td>
                       <div className="table-actions">
-                        <button className="btn btn-ghost" onClick={() => handleEdit(student)}>
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => handleEdit(student)}
+                        >
                           Edit
                         </button>
-                        <button className="btn btn-danger" onClick={() => void handleDelete(student._id)}>
+
+                        <button
+                          type="button"
+                          className="btn btn-danger"
+                          onClick={() => void handleDelete(student._id)}
+                        >
                           Delete
                         </button>
                       </div>
@@ -311,10 +396,174 @@ export default function StudentsPage() {
                   ) : null}
                 </tr>
               ))}
+
+              {filteredStudents.length === 0 ? (
+                <tr>
+                  <td colSpan={canEdit ? 9 : 8}>
+                    <div className="empty-state">No student matched your search.</div>
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
       </div>
+
+      {previewStudent ? (
+        <div className="card qr-preview-card">
+          <div className="card-header-row">
+            <div>
+              <h3>QR Preview</h3>
+              <p>
+                {previewStudent.fullName} ({previewStudent.rollNumber})
+              </p>
+            </div>
+
+            <div className="inline-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => openSinglePrint(previewStudent)}
+              >
+                Print This Card
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setPreviewStudent(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+
+          <div className="qr-box">
+            <QRCodeSVG
+              value={previewStudent.qrCodeValue}
+              size={220}
+              includeMargin
+            />
+
+            <div className="form-grid">
+              <div><strong>Name:</strong> {previewStudent.fullName}</div>
+              <div><strong>Roll Number:</strong> {previewStudent.rollNumber}</div>
+              <div><strong>Email:</strong> {previewStudent.email}</div>
+              <div><strong>Program:</strong> {previewStudent.program}</div>
+              <div><strong>Semester:</strong> {previewStudent.semester}</div>
+
+              <textarea
+                className="mono-text"
+                readOnly
+                value={previewStudent.qrCodeValue}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {printMode === 'single' && previewStudent ? (
+        <div className="card">
+          <div className="card-header-row no-print">
+            <div>
+              <h3>Print Student QR Card</h3>
+              <p>
+                Use this as admit slip style QR card for attendance scanning at exam entry.
+              </p>
+            </div>
+
+            <div className="inline-actions">
+              <button type="button" className="btn btn-primary" onClick={handlePrint}>
+                Print Now
+              </button>
+
+              <button type="button" className="btn btn-secondary" onClick={closePrintView}>
+                Close
+              </button>
+            </div>
+          </div>
+
+          <div className="print-card-grid">
+            <div className="student-print-card">
+              <div className="student-print-header">
+                <h2>Smart Exam Hall Attendance Card</h2>
+                <p>Student QR Attendance Slip</p>
+              </div>
+
+              <div className="student-print-body">
+                <div className="student-print-details">
+                  <div><strong>Name:</strong> {previewStudent.fullName}</div>
+                  <div><strong>Roll Number:</strong> {previewStudent.rollNumber}</div>
+                  <div><strong>Email:</strong> {previewStudent.email}</div>
+                  <div><strong>Program:</strong> {previewStudent.program}</div>
+                  <div><strong>Semester:</strong> {previewStudent.semester}</div>
+                  <div><strong>Status:</strong> {previewStudent.isActive ? 'Active' : 'Inactive'}</div>
+                </div>
+
+                <div className="student-print-qr">
+                  <QRCodeSVG
+                    value={previewStudent.qrCodeValue}
+                    size={180}
+                    includeMargin
+                  />
+                  <p className="small-muted">Scan this QR at exam hall entrance</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {printMode === 'all' ? (
+        <div className="card">
+          <div className="card-header-row no-print">
+            <div>
+              <h3>Print All Student QR Cards</h3>
+              <p>
+                Print all student admit slip style QR attendance cards in one batch.
+              </p>
+            </div>
+
+            <div className="inline-actions">
+              <button type="button" className="btn btn-primary" onClick={handlePrint}>
+                Print All
+              </button>
+
+              <button type="button" className="btn btn-secondary" onClick={closePrintView}>
+                Close
+              </button>
+            </div>
+          </div>
+
+          <div className="batch-print-grid">
+            {students.map((student) => (
+              <div key={student._id} className="student-print-card batch-card">
+                <div className="student-print-header">
+                  <h2>Smart Exam Hall Attendance Card</h2>
+                  <p>Student QR Attendance Slip</p>
+                </div>
+
+                <div className="student-print-body batch-body">
+                  <div className="student-print-details">
+                    <div><strong>Name:</strong> {student.fullName}</div>
+                    <div><strong>Roll Number:</strong> {student.rollNumber}</div>
+                    <div><strong>Program:</strong> {student.program}</div>
+                    <div><strong>Semester:</strong> {student.semester}</div>
+                  </div>
+
+                  <div className="student-print-qr">
+                    <QRCodeSVG
+                      value={student.qrCodeValue}
+                      size={130}
+                      includeMargin
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
