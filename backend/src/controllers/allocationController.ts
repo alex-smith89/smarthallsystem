@@ -1,14 +1,11 @@
 import asyncHandler from 'express-async-handler';
 import type { Request, Response } from 'express';
-import { Exam } from '../models/Exam';
-import { Hall } from '../models/Hall';
-import { SeatAllocation } from '../models/SeatAllocation';
-import { Student } from '../models/Student';
-import {
-  generateSeatAllocations,
-  type SeatPlanItem
-} from '../utils/seatAllocator';
-import { getIO } from '../socket';
+import { Exam } from '../models/Exam.js';
+import { Hall } from '../models/Hall.js';
+import { SeatAllocation } from '../models/SeatAllocation.js';
+import { Student } from '../models/Student.js';
+import { generateSeatAllocations, type SeatPlanItem } from '../utils/seatAllocator.js';
+import { getIO } from '../socket.js';
 
 export const generateAllocations = asyncHandler(async (req: Request, res: Response) => {
   const { examId } = req.body as { examId?: string };

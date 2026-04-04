@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
+import LoadingScreen from '../components/LoadingScreen';
 import { api, formatDateTime, getErrorMessage, groupLogsBySeverity } from '../lib/api';
 import type { AttendanceRecord, Exam, OfflineSyncResult, ScanLog } from '../types';
-import { clearOfflineQueue, enqueueOfflineScan, getOfflineQueue, setOfflineQueue } from '../utils/storage';
-import LoadingScreen from '../components/LoadingScreen';
+import {
+  clearOfflineQueue,
+  enqueueOfflineScan,
+  getOfflineQueue,
+  setOfflineQueue
+} from '../utils/storage';
 
 export default function AttendanceScannerPage() {
   const scannerRef = useRef<Html5Qrcode | null>(null);
@@ -24,6 +29,7 @@ export default function AttendanceScannerPage() {
   async function loadExams() {
     const response = await api.getExams();
     setExams(response.data);
+
     if (!selectedExamId && response.data.length > 0) {
       setSelectedExamId(response.data[0]._id);
     }
@@ -61,6 +67,7 @@ export default function AttendanceScannerPage() {
 
   useEffect(() => {
     if (!selectedExamId) return;
+
     void loadAttendance(selectedExamId);
 
     const selectedExam = exams.find((exam) => exam._id === selectedExamId);
@@ -99,9 +106,15 @@ export default function AttendanceScannerPage() {
         if (processingRef.current) return;
 
         processingRef.current = true;
+
         try {
           const response = await api.scanAttendance(selectedExamId, decodedText);
-          setMessage(response.message || (response.warning ? 'Duplicate scan detected.' : 'Attendance marked successfully.'));
+          setMessage(
+            response.message ||
+              (response.warning
+                ? 'Duplicate scan detected.'
+                : 'Attendance marked successfully.')
+          );
           await loadAttendance(selectedExamId);
         } catch (err) {
           const messageText = getErrorMessage(err);
@@ -151,7 +164,11 @@ export default function AttendanceScannerPage() {
     setMessage('');
 
     try {
-      const response = await api.markManualAttendance(selectedExamId, manualStudentId, manualNotes);
+      const response = await api.markManualAttendance(
+        selectedExamId,
+        manualStudentId,
+        manualNotes
+      );
       setMessage(response.message || 'Manual attendance marked successfully.');
       setManualNotes('');
       await loadAttendance(selectedExamId);
@@ -169,6 +186,7 @@ export default function AttendanceScannerPage() {
 
     try {
       const response = await api.syncOfflineAttendance(selectedExamId, offlineQueue);
+
       const failed = response.data
         .filter((item: OfflineSyncResult) => !item.success)
         .map((item: OfflineSyncResult) => item.qrCodeValue);
@@ -199,7 +217,10 @@ export default function AttendanceScannerPage() {
         <div className="card-header-row">
           <div>
             <h3>QR Attendance Scanner</h3>
-            <p>Scan student QR codes, handle duplicate/invalid scans, and sync offline records.</p>
+            <p>
+              Scan student QR codes, handle duplicate and invalid scans, and sync
+              offline records.
+            </p>
           </div>
 
           <div className="inline-actions">
@@ -211,10 +232,7 @@ export default function AttendanceScannerPage() {
               >
                 <option value="">Select exam</option>
                 {exams.map((exam) => (
-                  <option
-                    key={exam._id}
-                    value={exam._id}
-                  >
+                  <option key={exam._id} value={exam._id}>
                     {exam.subjectCode} - {exam.title}
                   </option>
                 ))}
@@ -230,10 +248,7 @@ export default function AttendanceScannerPage() {
                 Start Scanner
               </button>
             ) : (
-              <button
-                className="btn btn-secondary"
-                onClick={() => void stopScanner()}
-              >
+              <button className="btn btn-secondary" onClick={() => void stopScanner()}>
                 Stop Scanner
               </button>
             )}
@@ -263,10 +278,7 @@ export default function AttendanceScannerPage() {
 
           <div className="scanner-panel">
             <h4>Manual Attendance Fallback</h4>
-            <form
-              className="form-grid"
-              onSubmit={handleManualSubmit}
-            >
+            <form className="form-grid" onSubmit={handleManualSubmit}>
               <label className="form-field">
                 <span>Student</span>
                 <select
@@ -275,10 +287,7 @@ export default function AttendanceScannerPage() {
                   required
                 >
                   {(selectedExam?.studentIds ?? []).map((student) => (
-                    <option
-                      key={student._id}
-                      value={student._id}
-                    >
+                    <option key={student._id} value={student._id}>
                       {student.rollNumber} - {student.fullName}
                     </option>
                   ))}
@@ -353,18 +362,18 @@ export default function AttendanceScannerPage() {
           <div className="log-list">
             {logs.map((log) => {
               const severity = groupLogsBySeverity(log);
+
               return (
-                <div
-                  key={log._id}
-                  className={`log-card log-${severity}`}
-                >
+                <div key={log._id} className={`log-card log-${severity}`}>
                   <div className="log-top">
                     <strong>{log.result.toUpperCase()}</strong>
                     <span>{formatDateTime(log.createdAt)}</span>
                   </div>
                   <p>{log.message}</p>
                   <small>
-                    {log.studentId?.fullName ? `${log.studentId.fullName} (${log.studentId.rollNumber})` : 'Unknown / invalid QR'}
+                    {log.studentId?.fullName
+                      ? `${log.studentId.fullName} (${log.studentId.rollNumber})`
+                      : 'Unknown / invalid QR'}
                   </small>
                 </div>
               );

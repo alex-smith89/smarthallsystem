@@ -6,16 +6,30 @@ export function notFound(req: Request, res: Response, next: NextFunction): void 
 }
 
 export function errorHandler(
-  err: Error,
+  err: Error & { code?: number; keyPattern?: Record<string, unknown>; path?: string },
   _req: Request,
   res: Response,
   _next: NextFunction
 ): void {
-  const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
+  let statusCode = res.statusCode === 200 ? 500 : res.statusCode;
+  let message = err.message;
+
+  if (err.code === 11000) {
+    statusCode = statusCode === 500 ? 409 : statusCode;
+    const fields = Object.keys(err.keyPattern || {});
+    message = fields.length
+      ? `Duplicate value detected for: ${fields.join(', ')}`
+      : 'Duplicate value detected';
+  }
+
+  if (err.name === 'CastError') {
+    statusCode = 400;
+    message = `Invalid identifier for field: ${err.path || 'unknown'}`;
+  }
 
   res.status(statusCode).json({
     success: false,
-    message: err.message,
+    message,
     stack: process.env.NODE_ENV === 'production' ? undefined : err.stack
   });
 }

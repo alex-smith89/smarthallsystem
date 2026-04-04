@@ -22,9 +22,7 @@ export function getStoredToken(): string | null {
 
 export function getStoredUser(): User | null {
   const raw = localStorage.getItem(USER_KEY);
-  if (!raw) {
-    return null;
-  }
+  if (!raw) return null;
 
   try {
     return JSON.parse(raw) as User;
@@ -35,9 +33,7 @@ export function getStoredUser(): User | null {
 
 function readOfflineQueueMap(): OfflineQueueMap {
   const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
-  if (!raw) {
-    return {};
-  }
+  if (!raw) return {};
 
   try {
     return JSON.parse(raw) as OfflineQueueMap;

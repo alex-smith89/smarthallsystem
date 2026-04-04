@@ -34,14 +34,12 @@ export default function LoginPage() {
         <div className="auth-intro">
           <h1>Smart Exam Hall System</h1>
           <p>
-            Login to manage seat allocation, QR attendance, and real-time exam dashboard.
+            Login to manage seat allocation, QR attendance, real-time dashboard,
+            and reports.
           </p>
         </div>
 
-        <form
-          className="form-grid"
-          onSubmit={handleSubmit}
-        >
+        <form className="form-grid" onSubmit={handleSubmit}>
           <label className="form-field">
             <span>Email</span>
             <input
@@ -64,11 +62,7 @@ export default function LoginPage() {
 
           {error ? <div className="alert alert-error">{error}</div> : null}
 
-          <button
-            className="btn btn-primary"
-            disabled={submitting}
-            type="submit"
-          >
+          <button className="btn btn-primary" disabled={submitting} type="submit">
             {submitting ? 'Signing in...' : 'Login'}
           </button>
         </form>

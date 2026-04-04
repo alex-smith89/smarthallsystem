@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { api, getErrorMessage } from '../lib/api';
-import { useAuth } from '../contexts/AuthContext';
-import type { Student } from '../types';
 import LoadingScreen from '../components/LoadingScreen';
+import { useAuth } from '../contexts/AuthContext';
+import { api, getErrorMessage } from '../lib/api';
+import type { Student } from '../types';
 
 type StudentFormState = {
   fullName: string;
@@ -33,10 +33,13 @@ export default function StudentsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+
   const canEdit = user?.role === 'admin';
 
   async function loadStudents() {
     setLoading(true);
+    setError('');
+
     try {
       const response = await api.getStudents();
       setStudents(response.data);
@@ -115,6 +118,7 @@ export default function StudentsPage() {
 
   async function handleDelete(studentId: string) {
     if (!canEdit) return;
+
     const confirmed = window.confirm('Delete this student?');
     if (!confirmed) return;
 
@@ -133,7 +137,7 @@ export default function StudentsPage() {
 
   return (
     <div className="page-stack">
-      <div className="stats-grid">
+      <div className="stats-grid stats-grid-3">
         <div className="stat-card">
           <p className="stat-label">Total Students</p>
           <h3 className="stat-value">{students.length}</h3>
@@ -160,10 +164,7 @@ export default function StudentsPage() {
         {message ? <div className="alert alert-success">{message}</div> : null}
         {error ? <div className="alert alert-error">{error}</div> : null}
 
-        <form
-          className="form-grid"
-          onSubmit={handleSubmit}
-        >
+        <form className="form-grid form-grid-2" onSubmit={handleSubmit}>
           <label className="form-field">
             <span>Full Name</span>
             <input
@@ -228,19 +229,11 @@ export default function StudentsPage() {
           </label>
 
           {canEdit ? (
-            <div className="form-actions">
-              <button
-                className="btn btn-primary"
-                disabled={submitting}
-                type="submit"
-              >
+            <div className="form-actions form-actions-full">
+              <button className="btn btn-primary" disabled={submitting} type="submit">
                 {submitting ? 'Saving...' : editingId ? 'Update Student' : 'Add Student'}
               </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={resetForm}
-              >
+              <button type="button" className="btn btn-secondary" onClick={resetForm}>
                 Reset
               </button>
             </div>
@@ -257,25 +250,15 @@ export default function StudentsPage() {
                 {previewStudent.fullName} ({previewStudent.rollNumber})
               </p>
             </div>
-            <button
-              className="btn btn-secondary"
-              onClick={() => setPreviewStudent(null)}
-            >
+
+            <button className="btn btn-secondary" onClick={() => setPreviewStudent(null)}>
               Close
             </button>
           </div>
 
           <div className="qr-box">
-            <QRCodeSVG
-              value={previewStudent.qrCodeValue}
-              size={220}
-              includeMargin
-            />
-            <textarea
-              className="mono-text"
-              readOnly
-              value={previewStudent.qrCodeValue}
-            />
+            <QRCodeSVG value={previewStudent.qrCodeValue} size={220} includeMargin />
+            <textarea className="mono-text" readOnly value={previewStudent.qrCodeValue} />
           </div>
         </div>
       ) : null}
@@ -305,31 +288,22 @@ export default function StudentsPage() {
                   <td>{student.program}</td>
                   <td>{student.semester}</td>
                   <td>
-                    <span className={student.isActive ? 'pill pill-active' : 'pill pill-completed'}>
+                    <span className={`pill ${student.isActive ? 'pill-active' : 'pill-warning'}`}>
                       {student.isActive ? 'Active' : 'Inactive'}
                     </span>
                   </td>
                   <td>
-                    <button
-                      className="btn btn-ghost"
-                      onClick={() => setPreviewStudent(student)}
-                    >
-                      View QR
+                    <button className="btn btn-ghost" onClick={() => setPreviewStudent(student)}>
+                      Preview QR
                     </button>
                   </td>
                   {canEdit ? (
                     <td>
                       <div className="table-actions">
-                        <button
-                          className="btn btn-ghost"
-                          onClick={() => handleEdit(student)}
-                        >
+                        <button className="btn btn-ghost" onClick={() => handleEdit(student)}>
                           Edit
                         </button>
-                        <button
-                          className="btn btn-danger"
-                          onClick={() => void handleDelete(student._id)}
-                        >
+                        <button className="btn btn-danger" onClick={() => void handleDelete(student._id)}>
                           Delete
                         </button>
                       </div>

@@ -106,11 +106,41 @@ export type DashboardSummaryResponse = {
     absent: number;
     progress: number;
   };
+  scanStats?: {
+    valid: number;
+    duplicate: number;
+    invalid: number;
+    manual: number;
+  };
   hallOccupancy?: Array<{
+    hallId: string;
     hallName: string;
     capacity: number;
     assigned: number;
     present: number;
+    vacant: number;
+    occupancyPercent: number;
+  }>;
+  seatingCharts?: Array<{
+    hallId: string;
+    hallName: string;
+    seats: Array<{
+      seatNumber: string;
+      row: number;
+      column: number;
+      studentName: string;
+      rollNumber: string;
+      present: boolean;
+    }>;
+  }>;
+  recentAttendance?: Array<{
+    id: string;
+    scannedAt: string;
+    scanMethod: 'qr' | 'manual' | 'offline-sync';
+    studentName: string;
+    rollNumber: string;
+    hallName: string;
+    scannedBy: string;
   }>;
   warnings?: Array<{
     id: string;
@@ -123,6 +153,7 @@ export type DashboardSummaryResponse = {
   examCount?: number;
   allocationCount?: number;
   attendanceCount?: number;
+  warningCount?: number;
   message?: string;
 };
 
@@ -148,4 +179,85 @@ export type OfflineSyncResult = {
   qrCodeValue: string;
   success: boolean;
   message: string;
+};
+
+export type ExamReport = {
+  generatedAt: string;
+  exam: {
+    _id: string;
+    title: string;
+    subjectCode: string;
+    examDate: string;
+    startTime: string;
+    endTime: string;
+    status: ExamStatus;
+  };
+  summary: {
+    assigned: number;
+    present: number;
+    absent: number;
+    progress: number;
+    duplicateScanCount: number;
+    invalidScanCount: number;
+    manualAttendanceCount: number;
+    offlineSyncCount: number;
+  };
+  hallOccupancy: Array<{
+    hallId: string;
+    hallName: string;
+    capacity: number;
+    assigned: number;
+    present: number;
+    vacant: number;
+    occupancyPercent: number;
+  }>;
+  attendanceByMethod: Array<{
+    method: 'qr' | 'manual' | 'offline-sync';
+    count: number;
+  }>;
+  seatingCharts: Array<{
+    hallId: string;
+    hallName: string;
+    seats: Array<{
+      seatNumber: string;
+      row: number;
+      column: number;
+      studentId: string;
+      studentName: string;
+      rollNumber: string;
+      program: string;
+      semester: number;
+      status: 'present' | 'absent';
+      scanMethod: 'qr' | 'manual' | 'offline-sync' | null;
+      scannedAt: string | null;
+    }>;
+  }>;
+  absentStudents: Array<{
+    studentId: string;
+    fullName: string;
+    rollNumber: string;
+    program: string;
+    semester: number;
+    hallName: string;
+    seatNumber: string;
+  }>;
+  warningLogs: Array<{
+    id: string;
+    result: string;
+    message: string;
+    hallName: string;
+    studentName: string;
+    rollNumber: string;
+    createdAt: string;
+    scannedBy: string;
+  }>;
+  attendanceRecords: Array<{
+    id: string;
+    fullName: string;
+    rollNumber: string;
+    hallName: string;
+    scanMethod: 'qr' | 'manual' | 'offline-sync';
+    scannedAt: string;
+    scannedBy: string;
+  }>;
 };

@@ -4,6 +4,7 @@ import type {
   AttendanceRecord,
   DashboardSummaryResponse,
   Exam,
+  ExamReport,
   Hall,
   LoginResponse,
   OfflineSyncResult,
@@ -43,6 +44,25 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   return data;
 }
 
+async function requestText(endpoint: string): Promise<string> {
+  const token = getStoredToken();
+
+  const response = await fetch(`${API_URL}${endpoint}`, {
+    method: 'GET',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  });
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(text || 'Request failed');
+  }
+
+  return text;
+}
+
 export const api = {
   login: async (email: string, password: string) =>
     request<LoginResponse>('/auth/login', {
@@ -60,14 +80,16 @@ export const api = {
     id: string,
     payload: Partial<Omit<Student, '_id' | 'qrCodeValue'>>
   ) => request<Student>(`/students/${id}`, { method: 'PUT', body: payload }),
-  deleteStudent: async (id: string) => request<{ message: string }>(`/students/${id}`, { method: 'DELETE' }),
+  deleteStudent: async (id: string) =>
+    request<{ message: string }>(`/students/${id}`, { method: 'DELETE' }),
 
   getHalls: async () => request<Hall[]>('/halls'),
   createHall: async (payload: Omit<Hall, '_id'>) =>
     request<Hall>('/halls', { method: 'POST', body: payload }),
   updateHall: async (id: string, payload: Partial<Omit<Hall, '_id'>>) =>
     request<Hall>(`/halls/${id}`, { method: 'PUT', body: payload }),
-  deleteHall: async (id: string) => request<{ message: string }>(`/halls/${id}`, { method: 'DELETE' }),
+  deleteHall: async (id: string) =>
+    request<{ message: string }>(`/halls/${id}`, { method: 'DELETE' }),
 
   getExams: async () => request<Exam[]>('/exams'),
   createExam: async (payload: {
@@ -92,7 +114,8 @@ export const api = {
       studentIds: string[];
     }>
   ) => request<Exam>(`/exams/${id}`, { method: 'PUT', body: payload }),
-  deleteExam: async (id: string) => request<{ message: string }>(`/exams/${id}`, { method: 'DELETE' }),
+  deleteExam: async (id: string) =>
+    request<{ message: string }>(`/exams/${id}`, { method: 'DELETE' }),
 
   generateAllocations: async (examId: string) =>
     request<SeatAllocation[]>('/allocations/generate', {
@@ -121,7 +144,14 @@ export const api = {
     request<AttendanceByExamResponse>(`/attendance/exam/${examId}`),
 
   getDashboardSummary: async (examId?: string) =>
-    request<DashboardSummaryResponse>(`/dashboard/summary${examId ? `?examId=${examId}` : ''}`)
+    request<DashboardSummaryResponse>(
+      `/dashboard/summary${examId ? `?examId=${examId}` : ''}`
+    ),
+
+  getExamReport: async (examId: string) =>
+    request<ExamReport>(`/reports/exam/${examId}`),
+  downloadExamReportCsv: async (examId: string) =>
+    requestText(`/reports/exam/${examId}?format=csv`)
 };
 
 export function getErrorMessage(error: unknown): string {
@@ -132,19 +162,13 @@ export function getErrorMessage(error: unknown): string {
   return 'Something went wrong';
 }
 
-export function formatDateTime(value?: string): string {
-  if (!value) {
-    return '-';
-  }
-
+export function formatDateTime(value?: string | null): string {
+  if (!value) return '-';
   return new Date(value).toLocaleString();
 }
 
 export function formatDate(value?: string): string {
-  if (!value) {
-    return '-';
-  }
-
+  if (!value) return '-';
   return new Date(value).toLocaleDateString();
 }
 

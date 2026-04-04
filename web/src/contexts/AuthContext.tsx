@@ -67,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     saveAuthSession(response.data.token, response.data.user);
     setToken(response.data.token);
     setUser(response.data.user);
+    setLoading(false);
   }, []);
 
   const value = useMemo(

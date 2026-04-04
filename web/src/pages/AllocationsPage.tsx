@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import LoadingScreen from '../components/LoadingScreen';
 import { api, getErrorMessage } from '../lib/api';
 import type { Exam, SeatAllocation } from '../types';
-import LoadingScreen from '../components/LoadingScreen';
 
 export default function AllocationsPage() {
   const [exams, setExams] = useState<Exam[]>([]);
@@ -15,6 +15,7 @@ export default function AllocationsPage() {
   async function loadExams() {
     const response = await api.getExams();
     setExams(response.data);
+
     if (!selectedExamId && response.data.length > 0) {
       setSelectedExamId(response.data[0]._id);
     }
@@ -68,9 +69,7 @@ export default function AllocationsPage() {
   const groupedByHall = useMemo(() => {
     return allocations.reduce<Record<string, SeatAllocation[]>>((acc, allocation) => {
       const hallName = allocation.hallId.name;
-      if (!acc[hallName]) {
-        acc[hallName] = [];
-      }
+      if (!acc[hallName]) acc[hallName] = [];
       acc[hallName].push(allocation);
       return acc;
     }, {});
@@ -86,7 +85,9 @@ export default function AllocationsPage() {
         <div className="card-header-row">
           <div>
             <h3>Seat Allocation</h3>
-            <p>Generate automatic seating by hall capacity, rows, columns, and roll number order.</p>
+            <p>
+              Generate automatic seating by hall capacity, rows, columns, and roll number order.
+            </p>
           </div>
 
           <div className="inline-actions">
@@ -98,10 +99,7 @@ export default function AllocationsPage() {
               >
                 <option value="">Select exam</option>
                 {exams.map((exam) => (
-                  <option
-                    key={exam._id}
-                    value={exam._id}
-                  >
+                  <option key={exam._id} value={exam._id}>
                     {exam.subjectCode} - {exam.title}
                   </option>
                 ))}
@@ -138,11 +136,9 @@ export default function AllocationsPage() {
         </div>
       ) : (
         Object.entries(groupedByHall).map(([hallName, hallAllocations]) => (
-          <div
-            key={hallName}
-            className="card"
-          >
+          <div key={hallName} className="card">
             <h3>{hallName} Seating Chart</h3>
+
             <div className="responsive-table">
               <table>
                 <thead>

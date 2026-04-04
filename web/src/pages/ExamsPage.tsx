@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
-import { api, getErrorMessage } from '../lib/api';
-import { useAuth } from '../contexts/AuthContext';
-import type { Exam, ExamStatus, Hall, Student } from '../types';
+import { useEffect, useState } from 'react';
 import LoadingScreen from '../components/LoadingScreen';
+import { useAuth } from '../contexts/AuthContext';
+import { api, getErrorMessage } from '../lib/api';
+import type { Exam, Hall, Student } from '../types';
 
 type ExamFormState = {
   title: string;
@@ -10,7 +10,7 @@ type ExamFormState = {
   examDate: string;
   startTime: string;
   endTime: string;
-  status: ExamStatus;
+  status: 'scheduled' | 'active' | 'completed';
   hallIds: string[];
   studentIds: string[];
 };
@@ -26,10 +26,14 @@ const initialForm: ExamFormState = {
   studentIds: []
 };
 
+function toggleSelection(items: string[], value: string): string[] {
+  return items.includes(value)
+    ? items.filter((item) => item !== value)
+    : [...items, value];
+}
+
 export default function ExamsPage() {
   const { user } = useAuth();
-  const canEdit = user?.role === 'admin';
-
   const [exams, setExams] = useState<Exam[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [halls, setHalls] = useState<Hall[]>([]);
@@ -40,8 +44,12 @@ export default function ExamsPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
+  const canEdit = user?.role === 'admin';
+
   async function loadAll() {
     setLoading(true);
+    setError('');
+
     try {
       const [examResponse, studentResponse, hallResponse] = await Promise.all([
         api.getExams(),
@@ -50,7 +58,7 @@ export default function ExamsPage() {
       ]);
 
       setExams(examResponse.data);
-      setStudents(studentResponse.data);
+      setStudents(studentResponse.data.filter((student) => student.isActive));
       setHalls(hallResponse.data);
     } catch (err) {
       setError(getErrorMessage(err));
@@ -68,10 +76,6 @@ export default function ExamsPage() {
     setEditingId(null);
   }
 
-  function toggleSelection(list: string[], value: string) {
-    return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
-  }
-
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canEdit) return;
@@ -82,27 +86,10 @@ export default function ExamsPage() {
 
     try {
       if (editingId) {
-        await api.updateExam(editingId, {
-          title: form.title,
-          subjectCode: form.subjectCode,
-          examDate: form.examDate,
-          startTime: form.startTime,
-          endTime: form.endTime,
-          status: form.status,
-          hallIds: form.hallIds,
-          studentIds: form.studentIds
-        });
+        await api.updateExam(editingId, form);
         setMessage('Exam updated successfully.');
       } else {
-        await api.createExam({
-          title: form.title,
-          subjectCode: form.subjectCode,
-          examDate: form.examDate,
-          startTime: form.startTime,
-          endTime: form.endTime,
-          hallIds: form.hallIds,
-          studentIds: form.studentIds
-        });
+        await api.createExam(form);
         setMessage('Exam created successfully.');
       }
 
@@ -131,7 +118,9 @@ export default function ExamsPage() {
 
   async function handleDelete(id: string) {
     if (!canEdit) return;
-    if (!window.confirm('Delete this exam?')) return;
+
+    const confirmed = window.confirm('Delete this exam?');
+    if (!confirmed) return;
 
     try {
       await api.deleteExam(id);
@@ -142,20 +131,32 @@ export default function ExamsPage() {
     }
   }
 
-  const selectedStudentCount = useMemo(() => form.studentIds.length, [form.studentIds]);
-  const selectedHallCount = useMemo(() => form.hallIds.length, [form.hallIds]);
-
   if (loading) {
     return <LoadingScreen text="Loading exams..." />;
   }
 
   return (
     <div className="page-stack">
+      <div className="stats-grid stats-grid-3">
+        <div className="stat-card">
+          <p className="stat-label">Total Exams</p>
+          <h3 className="stat-value">{exams.length}</h3>
+        </div>
+        <div className="stat-card">
+          <p className="stat-label">Available Halls</p>
+          <h3 className="stat-value">{halls.length}</h3>
+        </div>
+        <div className="stat-card">
+          <p className="stat-label">Available Students</p>
+          <h3 className="stat-value">{students.length}</h3>
+        </div>
+      </div>
+
       <div className="card">
         <div className="card-header-row">
           <div>
             <h3>Exam Management</h3>
-            <p>Create exam schedules and assign students and halls before seat allocation.</p>
+            <p>Create exams, assign halls and students, and manage exam status.</p>
           </div>
           {!canEdit ? <span className="pill pill-completed">Read only for invigilator</span> : null}
         </div>
@@ -163,87 +164,106 @@ export default function ExamsPage() {
         {message ? <div className="alert alert-success">{message}</div> : null}
         {error ? <div className="alert alert-error">{error}</div> : null}
 
-        <form
-          className="form-grid"
-          onSubmit={handleSubmit}
-        >
-          <label className="form-field">
-            <span>Exam Title</span>
-            <input
-              value={form.title}
-              onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
-              required
-              disabled={!canEdit}
-            />
-          </label>
+        <form className="form-grid" onSubmit={handleSubmit}>
+          <div className="form-grid form-grid-2">
+            <label className="form-field">
+              <span>Exam Title</span>
+              <input
+                value={form.title}
+                onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
+                required
+                disabled={!canEdit}
+              />
+            </label>
 
-          <label className="form-field">
-            <span>Subject Code</span>
-            <input
-              value={form.subjectCode}
-              onChange={(e) => setForm((prev) => ({ ...prev, subjectCode: e.target.value.toUpperCase() }))}
-              required
-              disabled={!canEdit}
-            />
-          </label>
+            <label className="form-field">
+              <span>Subject Code</span>
+              <input
+                value={form.subjectCode}
+                onChange={(e) => setForm((prev) => ({ ...prev, subjectCode: e.target.value }))}
+                required
+                disabled={!canEdit}
+              />
+            </label>
 
-          <label className="form-field">
-            <span>Exam Date</span>
-            <input
-              type="date"
-              value={form.examDate}
-              onChange={(e) => setForm((prev) => ({ ...prev, examDate: e.target.value }))}
-              required
-              disabled={!canEdit}
-            />
-          </label>
+            <label className="form-field">
+              <span>Exam Date</span>
+              <input
+                type="date"
+                value={form.examDate}
+                onChange={(e) => setForm((prev) => ({ ...prev, examDate: e.target.value }))}
+                required
+                disabled={!canEdit}
+              />
+            </label>
 
-          <label className="form-field">
-            <span>Start Time</span>
-            <input
-              type="time"
-              value={form.startTime}
-              onChange={(e) => setForm((prev) => ({ ...prev, startTime: e.target.value }))}
-              required
-              disabled={!canEdit}
-            />
-          </label>
+            <label className="form-field">
+              <span>Start Time</span>
+              <input
+                type="time"
+                value={form.startTime}
+                onChange={(e) => setForm((prev) => ({ ...prev, startTime: e.target.value }))}
+                required
+                disabled={!canEdit}
+              />
+            </label>
 
-          <label className="form-field">
-            <span>End Time</span>
-            <input
-              type="time"
-              value={form.endTime}
-              onChange={(e) => setForm((prev) => ({ ...prev, endTime: e.target.value }))}
-              required
-              disabled={!canEdit}
-            />
-          </label>
+            <label className="form-field">
+              <span>End Time</span>
+              <input
+                type="time"
+                value={form.endTime}
+                onChange={(e) => setForm((prev) => ({ ...prev, endTime: e.target.value }))}
+                required
+                disabled={!canEdit}
+              />
+            </label>
 
-          <label className="form-field">
-            <span>Status</span>
-            <select
-              value={form.status}
-              onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value as ExamStatus }))}
-              disabled={!canEdit}
-            >
-              <option value="scheduled">scheduled</option>
-              <option value="active">active</option>
-              <option value="completed">completed</option>
-            </select>
-          </label>
+            <label className="form-field">
+              <span>Status</span>
+              <select
+                value={form.status}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    status: e.target.value as ExamFormState['status']
+                  }))
+                }
+                disabled={!canEdit}
+              >
+                <option value="scheduled">Scheduled</option>
+                <option value="active">Active</option>
+                <option value="completed">Completed</option>
+              </select>
+            </label>
+          </div>
 
           <div className="selection-box">
             <div className="card-header-row compact-row">
               <strong>Select Halls</strong>
-              <span>{selectedHallCount} selected</span>
+              <div className="small-actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setForm((prev) => ({ ...prev, hallIds: halls.map((h) => h._id) }))}
+                  disabled={!canEdit}
+                >
+                  Select All
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setForm((prev) => ({ ...prev, hallIds: [] }))}
+                  disabled={!canEdit}
+                >
+                  Clear
+                </button>
+              </div>
             </div>
+
             <div className="checkbox-list">
               {halls.map((hall) => (
-                <label
-                  key={hall._id}
-                  className="checkbox-item"
-                >
+                <label key={hall._id} className="checkbox-item">
                   <input
                     type="checkbox"
                     checked={form.hallIds.includes(hall._id)}
@@ -270,7 +290,12 @@ export default function ExamsPage() {
                 <button
                   type="button"
                   className="btn btn-ghost"
-                  onClick={() => setForm((prev) => ({ ...prev, studentIds: students.map((s) => s._id) }))}
+                  onClick={() =>
+                    setForm((prev) => ({
+                      ...prev,
+                      studentIds: students.map((student) => student._id)
+                    }))
+                  }
                   disabled={!canEdit}
                 >
                   Select All
@@ -285,12 +310,10 @@ export default function ExamsPage() {
                 </button>
               </div>
             </div>
+
             <div className="checkbox-list tall-list">
               {students.map((student) => (
-                <label
-                  key={student._id}
-                  className="checkbox-item"
-                >
+                <label key={student._id} className="checkbox-item">
                   <input
                     type="checkbox"
                     checked={form.studentIds.includes(student._id)}
@@ -312,18 +335,10 @@ export default function ExamsPage() {
 
           {canEdit ? (
             <div className="form-actions">
-              <button
-                className="btn btn-primary"
-                type="submit"
-                disabled={submitting}
-              >
+              <button className="btn btn-primary" type="submit" disabled={submitting}>
                 {submitting ? 'Saving...' : editingId ? 'Update Exam' : 'Create Exam'}
               </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={resetForm}
-              >
+              <button type="button" className="btn btn-secondary" onClick={resetForm}>
                 Reset
               </button>
             </div>
@@ -353,7 +368,9 @@ export default function ExamsPage() {
                   <td>{exam.subjectCode}</td>
                   <td>{exam.title}</td>
                   <td>{exam.examDate}</td>
-                  <td>{exam.startTime} - {exam.endTime}</td>
+                  <td>
+                    {exam.startTime} - {exam.endTime}
+                  </td>
                   <td>
                     <span className={`pill pill-${exam.status}`}>{exam.status}</span>
                   </td>
@@ -362,16 +379,10 @@ export default function ExamsPage() {
                   {canEdit ? (
                     <td>
                       <div className="table-actions">
-                        <button
-                          className="btn btn-ghost"
-                          onClick={() => handleEdit(exam)}
-                        >
+                        <button className="btn btn-ghost" onClick={() => handleEdit(exam)}>
                           Edit
                         </button>
-                        <button
-                          className="btn btn-danger"
-                          onClick={() => void handleDelete(exam._id)}
-                        >
+                        <button className="btn btn-danger" onClick={() => void handleDelete(exam._id)}>
                           Delete
                         </button>
                       </div>

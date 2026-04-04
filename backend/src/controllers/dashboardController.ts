@@ -9,10 +9,11 @@ export const getDashboardSummary = asyncHandler(async (req: Request, res: Respon
   const examId = req.query.examId as string | undefined;
 
   if (!examId) {
-    const [examCount, allocationCount, attendanceCount] = await Promise.all([
+    const [examCount, allocationCount, attendanceCount, warningCount] = await Promise.all([
       Exam.countDocuments(),
       SeatAllocation.countDocuments(),
-      Attendance.countDocuments()
+      Attendance.countDocuments(),
+      ScanLog.countDocuments({ result: { $in: ['duplicate', 'invalid'] } })
     ]);
 
     res.json({
@@ -21,13 +22,14 @@ export const getDashboardSummary = asyncHandler(async (req: Request, res: Respon
         examCount,
         allocationCount,
         attendanceCount,
-        message: 'Select a specific exam to view live hall occupancy and scan warnings'
+        warningCount,
+        message: 'Select a specific exam to view live hall occupancy, seating charts, and scan warnings'
       }
     });
     return;
   }
 
-  const exam = await Exam.findById(examId).populate('hallIds', 'name capacity');
+  const exam = await Exam.findById(examId).populate('hallIds', 'name capacity rows columns seatPrefix');
 
   if (!exam) {
     res.status(404);
@@ -35,14 +37,21 @@ export const getDashboardSummary = asyncHandler(async (req: Request, res: Respon
   }
 
   const [allocations, attendance, recentLogs] = await Promise.all([
-    SeatAllocation.find({ examId }).populate('hallId', 'name capacity'),
-    Attendance.find({ examId }).populate('hallId', 'name capacity'),
+    SeatAllocation.find({ examId })
+      .populate('studentId', 'fullName rollNumber')
+      .populate('hallId', 'name capacity rows columns'),
+    Attendance.find({ examId })
+      .populate('studentId', 'fullName rollNumber')
+      .populate('hallId', 'name capacity')
+      .populate('scannedBy', 'name role')
+      .sort({ scannedAt: -1 }),
     ScanLog.find({ examId })
       .populate('studentId', 'fullName rollNumber')
       .sort({ createdAt: -1 })
-      .limit(10)
+      .limit(20)
   ]);
 
+  const attendanceSet = new Set(attendance.map((item) => item.studentId._id.toString()));
   const assigned = allocations.length;
   const present = attendance.length;
   const absent = Math.max(assigned - present, 0);
@@ -50,33 +59,88 @@ export const getDashboardSummary = asyncHandler(async (req: Request, res: Respon
 
   const occupancyMap = new Map<
     string,
-    { hallName: string; capacity: number; assigned: number; present: number }
+    {
+      hallId: string;
+      hallName: string;
+      capacity: number;
+      assigned: number;
+      present: number;
+      vacant: number;
+      occupancyPercent: number;
+    }
+  >();
+
+  const seatingChartMap = new Map<
+    string,
+    {
+      hallId: string;
+      hallName: string;
+      seats: Array<{
+        seatNumber: string;
+        row: number;
+        column: number;
+        studentName: string;
+        rollNumber: string;
+        present: boolean;
+      }>;
+    }
   >();
 
   for (const hall of exam.hallIds as any[]) {
     occupancyMap.set(hall._id.toString(), {
+      hallId: hall._id.toString(),
       hallName: hall.name,
       capacity: hall.capacity,
       assigned: 0,
-      present: 0
+      present: 0,
+      vacant: hall.capacity,
+      occupancyPercent: 0
+    });
+
+    seatingChartMap.set(hall._id.toString(), {
+      hallId: hall._id.toString(),
+      hallName: hall.name,
+      seats: []
     });
   }
 
-  for (const allocation of allocations) {
-    const hall = allocation.hallId as any;
-    const item = occupancyMap.get(hall._id.toString());
+  for (const allocation of allocations as any[]) {
+    const hall = allocation.hallId;
+    const hallIdValue = hall._id.toString();
+    const item = occupancyMap.get(hallIdValue);
     if (item) {
       item.assigned += 1;
+      item.vacant = Math.max(item.capacity - item.assigned, 0);
+      item.occupancyPercent = item.capacity === 0 ? 0 : Number(((item.assigned / item.capacity) * 100).toFixed(2));
+    }
+
+    const chart = seatingChartMap.get(hallIdValue);
+    if (chart) {
+      chart.seats.push({
+        seatNumber: allocation.seatNumber,
+        row: allocation.row,
+        column: allocation.column,
+        studentName: allocation.studentId?.fullName || 'Unknown',
+        rollNumber: allocation.studentId?.rollNumber || '-',
+        present: attendanceSet.has(allocation.studentId?._id?.toString())
+      });
     }
   }
 
-  for (const mark of attendance) {
-    const hall = mark.hallId as any;
+  for (const mark of attendance as any[]) {
+    const hall = mark.hallId;
     const item = occupancyMap.get(hall._id.toString());
     if (item) {
       item.present += 1;
     }
   }
+
+  const scanStats = {
+    valid: recentLogs.filter((log) => log.result === 'valid').length,
+    duplicate: recentLogs.filter((log) => log.result === 'duplicate').length,
+    invalid: recentLogs.filter((log) => log.result === 'invalid').length,
+    manual: recentLogs.filter((log) => log.result === 'manual').length
+  };
 
   const warnings = recentLogs.map((log) => ({
     id: log._id,
@@ -85,6 +149,16 @@ export const getDashboardSummary = asyncHandler(async (req: Request, res: Respon
     qrCodeValue: log.qrCodeValue,
     student: log.studentId,
     createdAt: log.createdAt
+  }));
+
+  const recentAttendance = attendance.slice(0, 12).map((item: any) => ({
+    id: item._id,
+    scannedAt: item.scannedAt,
+    scanMethod: item.scanMethod,
+    studentName: item.studentId?.fullName || 'Unknown',
+    rollNumber: item.studentId?.rollNumber || '-',
+    hallName: item.hallId?.name || '-',
+    scannedBy: item.scannedBy?.name || '-'
   }));
 
   res.json({
@@ -105,7 +179,13 @@ export const getDashboardSummary = asyncHandler(async (req: Request, res: Respon
         absent,
         progress
       },
+      scanStats,
       hallOccupancy: Array.from(occupancyMap.values()),
+      seatingCharts: Array.from(seatingChartMap.values()).map((item) => ({
+        ...item,
+        seats: item.seats.sort((a, b) => a.row - b.row || a.column - b.column)
+      })),
+      recentAttendance,
       warnings
     }
   });

@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { generateAllocations, getAllocationsByExam } from '../controllers/allocationController';
-import { authorize, protect } from '../middleware/authMiddleware';
+import { generateAllocations, getAllocationsByExam } from '../controllers/allocationController.js';
+import { authorize, protect } from '../middleware/authMiddleware.js';
 
 const router = Router();
 

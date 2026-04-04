@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { api, getErrorMessage } from '../lib/api';
-import { useAuth } from '../contexts/AuthContext';
-import type { Hall } from '../types';
 import LoadingScreen from '../components/LoadingScreen';
+import { useAuth } from '../contexts/AuthContext';
+import { api, getErrorMessage } from '../lib/api';
+import type { Hall } from '../types';
 
 type HallFormState = {
   name: string;
@@ -26,8 +26,6 @@ const initialForm: HallFormState = {
 
 export default function HallsPage() {
   const { user } = useAuth();
-  const canEdit = user?.role === 'admin';
-
   const [halls, setHalls] = useState<Hall[]>([]);
   const [form, setForm] = useState<HallFormState>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -36,8 +34,12 @@ export default function HallsPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
+  const canEdit = user?.role === 'admin';
+
   async function loadHalls() {
     setLoading(true);
+    setError('');
+
     try {
       const response = await api.getHalls();
       setHalls(response.data);
@@ -65,17 +67,17 @@ export default function HallsPage() {
     setError('');
     setMessage('');
 
-    try {
-      const payload = {
-        name: form.name,
-        building: form.building,
-        floor: form.floor,
-        capacity: Number(form.capacity),
-        rows: Number(form.rows),
-        columns: Number(form.columns),
-        seatPrefix: form.seatPrefix
-      };
+    const payload = {
+      name: form.name,
+      building: form.building,
+      floor: form.floor,
+      capacity: Number(form.capacity),
+      rows: Number(form.rows),
+      columns: Number(form.columns),
+      seatPrefix: form.seatPrefix || undefined
+    };
 
+    try {
       if (editingId) {
         await api.updateHall(editingId, payload);
         setMessage('Hall updated successfully.');
@@ -106,12 +108,14 @@ export default function HallsPage() {
     });
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(hallId: string) {
     if (!canEdit) return;
-    if (!window.confirm('Delete this hall?')) return;
+
+    const confirmed = window.confirm('Delete this hall?');
+    if (!confirmed) return;
 
     try {
-      await api.deleteHall(id);
+      await api.deleteHall(hallId);
       setMessage('Hall deleted successfully.');
       await loadHalls();
     } catch (err) {
@@ -119,17 +123,36 @@ export default function HallsPage() {
     }
   }
 
+  const totalCapacity = halls.reduce((sum, hall) => sum + hall.capacity, 0);
+
   if (loading) {
     return <LoadingScreen text="Loading halls..." />;
   }
 
   return (
     <div className="page-stack">
+      <div className="stats-grid stats-grid-3">
+        <div className="stat-card">
+          <p className="stat-label">Total Halls</p>
+          <h3 className="stat-value">{halls.length}</h3>
+        </div>
+        <div className="stat-card">
+          <p className="stat-label">Total Capacity</p>
+          <h3 className="stat-value">{totalCapacity}</h3>
+        </div>
+        <div className="stat-card">
+          <p className="stat-label">Largest Hall</p>
+          <h3 className="stat-value">
+            {halls.length ? Math.max(...halls.map((hall) => hall.capacity)) : 0}
+          </h3>
+        </div>
+      </div>
+
       <div className="card">
         <div className="card-header-row">
           <div>
             <h3>Hall Management</h3>
-            <p>Configure exam halls with capacity, grid layout, and seat labels.</p>
+            <p>Create and maintain exam halls with capacity, row, and column setup.</p>
           </div>
           {!canEdit ? <span className="pill pill-completed">Read only for invigilator</span> : null}
         </div>
@@ -137,10 +160,7 @@ export default function HallsPage() {
         {message ? <div className="alert alert-success">{message}</div> : null}
         {error ? <div className="alert alert-error">{error}</div> : null}
 
-        <form
-          className="form-grid"
-          onSubmit={handleSubmit}
-        >
+        <form className="form-grid form-grid-2" onSubmit={handleSubmit}>
           <label className="form-field">
             <span>Hall Name</span>
             <input
@@ -167,6 +187,16 @@ export default function HallsPage() {
               value={form.floor}
               onChange={(e) => setForm((prev) => ({ ...prev, floor: e.target.value }))}
               required
+              disabled={!canEdit}
+            />
+          </label>
+
+          <label className="form-field">
+            <span>Seat Prefix</span>
+            <input
+              value={form.seatPrefix}
+              onChange={(e) => setForm((prev) => ({ ...prev, seatPrefix: e.target.value }))}
+              placeholder="A / B / H1"
               disabled={!canEdit}
             />
           </label>
@@ -207,30 +237,12 @@ export default function HallsPage() {
             />
           </label>
 
-          <label className="form-field">
-            <span>Seat Prefix</span>
-            <input
-              value={form.seatPrefix}
-              onChange={(e) => setForm((prev) => ({ ...prev, seatPrefix: e.target.value }))}
-              placeholder="A"
-              disabled={!canEdit}
-            />
-          </label>
-
           {canEdit ? (
-            <div className="form-actions">
-              <button
-                className="btn btn-primary"
-                type="submit"
-                disabled={submitting}
-              >
+            <div className="form-actions form-actions-full">
+              <button className="btn btn-primary" disabled={submitting} type="submit">
                 {submitting ? 'Saving...' : editingId ? 'Update Hall' : 'Add Hall'}
               </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={resetForm}
-              >
+              <button type="button" className="btn btn-secondary" onClick={resetForm}>
                 Reset
               </button>
             </div>
@@ -239,18 +251,18 @@ export default function HallsPage() {
       </div>
 
       <div className="card">
-        <h3>Halls List</h3>
+        <h3>Hall List</h3>
         <div className="responsive-table">
           <table>
             <thead>
               <tr>
-                <th>Name</th>
+                <th>Hall</th>
                 <th>Building</th>
                 <th>Floor</th>
                 <th>Capacity</th>
                 <th>Rows</th>
                 <th>Columns</th>
-                <th>Seat Prefix</th>
+                <th>Prefix</th>
                 {canEdit ? <th>Actions</th> : null}
               </tr>
             </thead>
@@ -267,16 +279,10 @@ export default function HallsPage() {
                   {canEdit ? (
                     <td>
                       <div className="table-actions">
-                        <button
-                          className="btn btn-ghost"
-                          onClick={() => handleEdit(hall)}
-                        >
+                        <button className="btn btn-ghost" onClick={() => handleEdit(hall)}>
                           Edit
                         </button>
-                        <button
-                          className="btn btn-danger"
-                          onClick={() => void handleDelete(hall._id)}
-                        >
+                        <button className="btn btn-danger" onClick={() => void handleDelete(hall._id)}>
                           Delete
                         </button>
                       </div>

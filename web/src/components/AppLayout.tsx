@@ -7,7 +7,8 @@ const navItems = [
   { to: '/halls', label: 'Halls' },
   { to: '/exams', label: 'Exams' },
   { to: '/allocations', label: 'Allocations' },
-  { to: '/attendance', label: 'Attendance Scanner' }
+  { to: '/attendance', label: 'Scanner' },
+  { to: '/reports', label: 'Reports' }
 ];
 
 export default function AppLayout() {
@@ -19,7 +20,7 @@ export default function AppLayout() {
         <div>
           <div className="brand-card">
             <h1>Smart Exam Hall</h1>
-            <p>Attendance & seat management</p>
+            <p>Attendance, seating, dashboard, and reports</p>
           </div>
 
           <nav className="sidebar-nav">
@@ -43,10 +44,8 @@ export default function AppLayout() {
             <strong>{user?.name}</strong>
             <span>{user?.role}</span>
           </div>
-          <button
-            className="btn btn-secondary full-width"
-            onClick={logout}
-          >
+
+          <button className="btn btn-secondary full-width" onClick={logout}>
             Logout
           </button>
         </div>
@@ -56,7 +55,10 @@ export default function AppLayout() {
         <header className="page-header">
           <div>
             <h2>Smart Exam Hall & Attendance System</h2>
-            <p>Secure exam seating, QR attendance, and live monitoring.</p>
+            <p>
+              Responsive web app with automatic seating, QR attendance, real-time
+              monitoring, secure records, and reports.
+            </p>
           </div>
         </header>
 
