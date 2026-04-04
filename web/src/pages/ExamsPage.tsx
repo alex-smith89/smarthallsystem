@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import LoadingScreen from '../components/LoadingScreen';
 import { useAuth } from '../contexts/AuthContext';
 import { api, getErrorMessage } from '../lib/api';
@@ -34,13 +34,20 @@ function toggleSelection(items: string[], value: string): string[] {
 
 export default function ExamsPage() {
   const { user } = useAuth();
+
   const [exams, setExams] = useState<Exam[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [halls, setHalls] = useState<Hall[]>([]);
+
   const [form, setForm] = useState<ExamFormState>(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  const [studentSearch, setStudentSearch] = useState('');
+  const [hallSearch, setHallSearch] = useState('');
+
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -74,7 +81,51 @@ export default function ExamsPage() {
   function resetForm() {
     setForm(initialForm);
     setEditingId(null);
+    setStudentSearch('');
+    setHallSearch('');
   }
+
+  const filteredStudents = useMemo(() => {
+    const keyword = studentSearch.trim().toLowerCase();
+
+    if (!keyword) {
+      return students;
+    }
+
+    return students.filter((student) => {
+      return (
+        student.fullName.toLowerCase().includes(keyword) ||
+        student.rollNumber.toLowerCase().includes(keyword) ||
+        student.email.toLowerCase().includes(keyword) ||
+        student.program.toLowerCase().includes(keyword)
+      );
+    });
+  }, [students, studentSearch]);
+
+  const filteredHalls = useMemo(() => {
+    const keyword = hallSearch.trim().toLowerCase();
+
+    if (!keyword) {
+      return halls;
+    }
+
+    return halls.filter((hall) => {
+      return (
+        hall.name.toLowerCase().includes(keyword) ||
+        hall.building.toLowerCase().includes(keyword) ||
+        hall.floor.toLowerCase().includes(keyword) ||
+        (hall.seatPrefix || '').toLowerCase().includes(keyword)
+      );
+    });
+  }, [halls, hallSearch]);
+
+  const totalSelectedHallCapacity = useMemo(() => {
+    return halls
+      .filter((hall) => form.hallIds.includes(hall._id))
+      .reduce((sum, hall) => sum + hall.capacity, 0);
+  }, [halls, form.hallIds]);
+
+  const selectedStudentCount = form.studentIds.length;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -114,6 +165,11 @@ export default function ExamsPage() {
       hallIds: exam.hallIds.map((hall) => hall._id),
       studentIds: exam.studentIds.map((student) => student._id)
     });
+
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
   }
 
   async function handleDelete(id: string) {
@@ -131,6 +187,30 @@ export default function ExamsPage() {
     }
   }
 
+  function handleSelectAllFilteredStudents() {
+    const filteredIds = filteredStudents.map((student) => student._id);
+    const merged = Array.from(new Set([...form.studentIds, ...filteredIds]));
+    setForm((prev) => ({ ...prev, studentIds: merged }));
+  }
+
+  function handleClearStudents() {
+    setForm((prev) => ({ ...prev, studentIds: [] }));
+  }
+
+  function handleSelectAllFilteredHalls() {
+    const filteredIds = filteredHalls.map((hall) => hall._id);
+    const merged = Array.from(new Set([...form.hallIds, ...filteredIds]));
+    setForm((prev) => ({ ...prev, hallIds: merged }));
+  }
+
+  function handleClearHalls() {
+    setForm((prev) => ({ ...prev, hallIds: [] }));
+  }
+
+  const scheduledCount = exams.filter((exam) => exam.status === 'scheduled').length;
+  const activeCount = exams.filter((exam) => exam.status === 'active').length;
+  const completedCount = exams.filter((exam) => exam.status === 'completed').length;
+
   if (loading) {
     return <LoadingScreen text="Loading exams..." />;
   }
@@ -141,14 +221,21 @@ export default function ExamsPage() {
         <div className="stat-card">
           <p className="stat-label">Total Exams</p>
           <h3 className="stat-value">{exams.length}</h3>
+          <p className="stat-helper">All exam records</p>
         </div>
+
         <div className="stat-card">
-          <p className="stat-label">Available Halls</p>
-          <h3 className="stat-value">{halls.length}</h3>
+          <p className="stat-label">Scheduled / Active</p>
+          <h3 className="stat-value">
+            {scheduledCount} / {activeCount}
+          </h3>
+          <p className="stat-helper">Upcoming and running exams</p>
         </div>
+
         <div className="stat-card">
-          <p className="stat-label">Available Students</p>
-          <h3 className="stat-value">{students.length}</h3>
+          <p className="stat-label">Completed</p>
+          <h3 className="stat-value">{completedCount}</h3>
+          <p className="stat-helper">Finished exam sessions</p>
         </div>
       </div>
 
@@ -156,9 +243,15 @@ export default function ExamsPage() {
         <div className="card-header-row">
           <div>
             <h3>Exam Management</h3>
-            <p>Create exams, assign halls and students, and manage exam status.</p>
+            <p>
+              Create exams, assign halls and students, and manage status for seat
+              allocation and attendance scanning.
+            </p>
           </div>
-          {!canEdit ? <span className="pill pill-completed">Read only for invigilator</span> : null}
+
+          {!canEdit ? (
+            <span className="pill pill-completed">Read only for invigilator</span>
+          ) : null}
         </div>
 
         {message ? <div className="alert alert-success">{message}</div> : null}
@@ -171,6 +264,7 @@ export default function ExamsPage() {
               <input
                 value={form.title}
                 onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
+                placeholder="Distributed Systems Final Exam"
                 required
                 disabled={!canEdit}
               />
@@ -180,7 +274,8 @@ export default function ExamsPage() {
               <span>Subject Code</span>
               <input
                 value={form.subjectCode}
-                onChange={(e) => setForm((prev) => ({ ...prev, subjectCode: e.target.value }))}
+                onChange={(e) => setForm((prev) => ({ ...prev, subjectCode: e.target.value.toUpperCase() }))}
+                placeholder="CSC401"
                 required
                 disabled={!canEdit}
               />
@@ -195,6 +290,24 @@ export default function ExamsPage() {
                 required
                 disabled={!canEdit}
               />
+            </label>
+
+            <label className="form-field">
+              <span>Status</span>
+              <select
+                value={form.status}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    status: e.target.value as ExamFormState['status']
+                  }))
+                }
+                disabled={!canEdit}
+              >
+                <option value="scheduled">Scheduled</option>
+                <option value="active">Active</option>
+                <option value="completed">Completed</option>
+              </select>
             </label>
 
             <label className="form-field">
@@ -218,42 +331,50 @@ export default function ExamsPage() {
                 disabled={!canEdit}
               />
             </label>
+          </div>
 
-            <label className="form-field">
-              <span>Status</span>
-              <select
-                value={form.status}
-                onChange={(e) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    status: e.target.value as ExamFormState['status']
-                  }))
-                }
-                disabled={!canEdit}
-              >
-                <option value="scheduled">Scheduled</option>
-                <option value="active">Active</option>
-                <option value="completed">Completed</option>
-              </select>
-            </label>
+          <div className="stats-grid stats-grid-3">
+            <div className="stat-card">
+              <p className="stat-label">Selected Halls</p>
+              <h3 className="stat-value">{form.hallIds.length}</h3>
+              <p className="stat-helper">Capacity: {totalSelectedHallCapacity}</p>
+            </div>
+
+            <div className="stat-card">
+              <p className="stat-label">Selected Students</p>
+              <h3 className="stat-value">{selectedStudentCount}</h3>
+              <p className="stat-helper">Students chosen for this exam</p>
+            </div>
+
+            <div className="stat-card">
+              <p className="stat-label">Capacity Check</p>
+              <h3 className="stat-value">
+                {totalSelectedHallCapacity >= selectedStudentCount ? 'OK' : 'Low'}
+              </h3>
+              <p className="stat-helper">
+                {totalSelectedHallCapacity} seats vs {selectedStudentCount} students
+              </p>
+            </div>
           </div>
 
           <div className="selection-box">
             <div className="card-header-row compact-row">
               <strong>Select Halls</strong>
+
               <div className="small-actions">
                 <button
                   type="button"
                   className="btn btn-ghost"
-                  onClick={() => setForm((prev) => ({ ...prev, hallIds: halls.map((h) => h._id) }))}
+                  onClick={handleSelectAllFilteredHalls}
                   disabled={!canEdit}
                 >
-                  Select All
+                  Select Filtered
                 </button>
+
                 <button
                   type="button"
                   className="btn btn-ghost"
-                  onClick={() => setForm((prev) => ({ ...prev, hallIds: [] }))}
+                  onClick={handleClearHalls}
                   disabled={!canEdit}
                 >
                   Clear
@@ -261,49 +382,60 @@ export default function ExamsPage() {
               </div>
             </div>
 
+            <label className="form-field">
+              <span>Search Halls</span>
+              <input
+                value={hallSearch}
+                onChange={(e) => setHallSearch(e.target.value)}
+                placeholder="Search hall / building / floor / prefix"
+                disabled={!canEdit}
+              />
+            </label>
+
             <div className="checkbox-list">
-              {halls.map((hall) => (
-                <label key={hall._id} className="checkbox-item">
-                  <input
-                    type="checkbox"
-                    checked={form.hallIds.includes(hall._id)}
-                    onChange={() =>
-                      setForm((prev) => ({
-                        ...prev,
-                        hallIds: toggleSelection(prev.hallIds, hall._id)
-                      }))
-                    }
-                    disabled={!canEdit}
-                  />
-                  <span>
-                    {hall.name} ({hall.capacity} seats)
-                  </span>
-                </label>
-              ))}
+              {filteredHalls.length > 0 ? (
+                filteredHalls.map((hall) => (
+                  <label key={hall._id} className="checkbox-item">
+                    <input
+                      type="checkbox"
+                      checked={form.hallIds.includes(hall._id)}
+                      onChange={() =>
+                        setForm((prev) => ({
+                          ...prev,
+                          hallIds: toggleSelection(prev.hallIds, hall._id)
+                        }))
+                      }
+                      disabled={!canEdit}
+                    />
+                    <span>
+                      {hall.name} - {hall.building}, {hall.floor} ({hall.capacity} seats)
+                    </span>
+                  </label>
+                ))
+              ) : (
+                <div className="empty-state">No hall matched your search.</div>
+              )}
             </div>
           </div>
 
           <div className="selection-box">
             <div className="card-header-row compact-row">
               <strong>Select Students</strong>
+
               <div className="small-actions">
                 <button
                   type="button"
                   className="btn btn-ghost"
-                  onClick={() =>
-                    setForm((prev) => ({
-                      ...prev,
-                      studentIds: students.map((student) => student._id)
-                    }))
-                  }
+                  onClick={handleSelectAllFilteredStudents}
                   disabled={!canEdit}
                 >
-                  Select All
+                  Select Filtered
                 </button>
+
                 <button
                   type="button"
                   className="btn btn-ghost"
-                  onClick={() => setForm((prev) => ({ ...prev, studentIds: [] }))}
+                  onClick={handleClearStudents}
                   disabled={!canEdit}
                 >
                   Clear
@@ -311,25 +443,39 @@ export default function ExamsPage() {
               </div>
             </div>
 
+            <label className="form-field">
+              <span>Search Students</span>
+              <input
+                value={studentSearch}
+                onChange={(e) => setStudentSearch(e.target.value)}
+                placeholder="Search name / roll / email / program"
+                disabled={!canEdit}
+              />
+            </label>
+
             <div className="checkbox-list tall-list">
-              {students.map((student) => (
-                <label key={student._id} className="checkbox-item">
-                  <input
-                    type="checkbox"
-                    checked={form.studentIds.includes(student._id)}
-                    onChange={() =>
-                      setForm((prev) => ({
-                        ...prev,
-                        studentIds: toggleSelection(prev.studentIds, student._id)
-                      }))
-                    }
-                    disabled={!canEdit}
-                  />
-                  <span>
-                    {student.rollNumber} - {student.fullName}
-                  </span>
-                </label>
-              ))}
+              {filteredStudents.length > 0 ? (
+                filteredStudents.map((student) => (
+                  <label key={student._id} className="checkbox-item">
+                    <input
+                      type="checkbox"
+                      checked={form.studentIds.includes(student._id)}
+                      onChange={() =>
+                        setForm((prev) => ({
+                          ...prev,
+                          studentIds: toggleSelection(prev.studentIds, student._id)
+                        }))
+                      }
+                      disabled={!canEdit}
+                    />
+                    <span>
+                      {student.rollNumber} - {student.fullName} ({student.program})
+                    </span>
+                  </label>
+                ))
+              ) : (
+                <div className="empty-state">No student matched your search.</div>
+              )}
             </div>
           </div>
 
@@ -338,6 +484,7 @@ export default function ExamsPage() {
               <button className="btn btn-primary" type="submit" disabled={submitting}>
                 {submitting ? 'Saving...' : editingId ? 'Update Exam' : 'Create Exam'}
               </button>
+
               <button type="button" className="btn btn-secondary" onClick={resetForm}>
                 Reset
               </button>
@@ -348,6 +495,7 @@ export default function ExamsPage() {
 
       <div className="card">
         <h3>Exam List</h3>
+
         <div className="responsive-table">
           <table>
             <thead>
@@ -362,6 +510,7 @@ export default function ExamsPage() {
                 {canEdit ? <th>Actions</th> : null}
               </tr>
             </thead>
+
             <tbody>
               {exams.map((exam) => (
                 <tr key={exam._id}>
@@ -376,13 +525,23 @@ export default function ExamsPage() {
                   </td>
                   <td>{exam.hallIds.map((hall) => hall.name).join(', ')}</td>
                   <td>{exam.studentIds.length}</td>
+
                   {canEdit ? (
                     <td>
                       <div className="table-actions">
-                        <button className="btn btn-ghost" onClick={() => handleEdit(exam)}>
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          onClick={() => handleEdit(exam)}
+                        >
                           Edit
                         </button>
-                        <button className="btn btn-danger" onClick={() => void handleDelete(exam._id)}>
+
+                        <button
+                          type="button"
+                          className="btn btn-danger"
+                          onClick={() => void handleDelete(exam._id)}
+                        >
                           Delete
                         </button>
                       </div>
@@ -390,6 +549,14 @@ export default function ExamsPage() {
                   ) : null}
                 </tr>
               ))}
+
+              {exams.length === 0 ? (
+                <tr>
+                  <td colSpan={canEdit ? 8 : 7}>
+                    <div className="empty-state">No exams created yet.</div>
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>

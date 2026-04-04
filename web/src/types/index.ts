@@ -64,6 +64,9 @@ export type SeatAllocation = {
   updatedAt?: string;
 };
 
+export type AttendanceStatus = 'present' | 'absent';
+export type AttendanceScanMethod = 'qr' | 'manual' | 'offline-sync';
+
 export type AttendanceRecord = {
   _id: string;
   examId: string;
@@ -71,12 +74,16 @@ export type AttendanceRecord = {
   hallId: Hall;
   seatAllocationId: string;
   qrCodeValue: string;
-  status: 'present' | 'absent';
-  scanMethod: 'qr' | 'manual' | 'offline-sync';
+  status: AttendanceStatus;
+  scanMethod: AttendanceScanMethod;
   scannedAt: string;
   scannedBy?: User;
   notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
+
+export type ScanLogResult = 'valid' | 'duplicate' | 'invalid' | 'manual';
 
 export type ScanLog = {
   _id: string;
@@ -84,10 +91,11 @@ export type ScanLog = {
   studentId?: Student;
   hallId?: Hall;
   qrCodeValue: string;
-  result: 'valid' | 'duplicate' | 'invalid' | 'manual';
+  result: ScanLogResult;
   message: string;
   scannedBy?: User;
   createdAt: string;
+  updatedAt?: string;
 };
 
 export type DashboardSummaryResponse = {
@@ -136,7 +144,7 @@ export type DashboardSummaryResponse = {
   recentAttendance?: Array<{
     id: string;
     scannedAt: string;
-    scanMethod: 'qr' | 'manual' | 'offline-sync';
+    scanMethod: AttendanceScanMethod;
     studentName: string;
     rollNumber: string;
     hallName: string;
@@ -212,7 +220,7 @@ export type ExamReport = {
     occupancyPercent: number;
   }>;
   attendanceByMethod: Array<{
-    method: 'qr' | 'manual' | 'offline-sync';
+    method: AttendanceScanMethod;
     count: number;
   }>;
   seatingCharts: Array<{
@@ -227,8 +235,8 @@ export type ExamReport = {
       rollNumber: string;
       program: string;
       semester: number;
-      status: 'present' | 'absent';
-      scanMethod: 'qr' | 'manual' | 'offline-sync' | null;
+      status: AttendanceStatus;
+      scanMethod: AttendanceScanMethod | null;
       scannedAt: string | null;
     }>;
   }>;
@@ -256,7 +264,7 @@ export type ExamReport = {
     fullName: string;
     rollNumber: string;
     hallName: string;
-    scanMethod: 'qr' | 'manual' | 'offline-sync';
+    scanMethod: AttendanceScanMethod;
     scannedAt: string;
     scannedBy: string;
   }>;

@@ -13,17 +13,44 @@ import type {
   Student,
   User
 } from '../types';
-import { getStoredToken } from '../utils/storage';
+import { clearAuthSession, getStoredToken } from '../utils/storage';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
+type RequestMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
+
 type RequestOptions = {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method?: RequestMethod;
   body?: unknown;
   token?: string | null;
 };
 
-async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<ApiEnvelope<T>> {
+async function parseJsonSafe<T>(response: Response): Promise<T | null> {
+  const contentType = response.headers.get('content-type') || '';
+
+  if (!contentType.includes('application/json')) {
+    return null;
+  }
+
+  try {
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function parseTextSafe(response: Response): Promise<string> {
+  try {
+    return await response.text();
+  } catch {
+    return '';
+  }
+}
+
+async function request<T>(
+  endpoint: string,
+  options: RequestOptions = {}
+): Promise<ApiEnvelope<T>> {
   const token = options.token ?? getStoredToken();
 
   const response = await fetch(`${API_URL}${endpoint}`, {
@@ -35,13 +62,22 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
     body: options.body ? JSON.stringify(options.body) : undefined
   });
 
-  const data = (await response.json()) as ApiEnvelope<T>;
+  const json = await parseJsonSafe<ApiEnvelope<T>>(response);
 
   if (!response.ok) {
-    throw new Error(data.message || 'Request failed');
+    if (response.status === 401) {
+      clearAuthSession();
+    }
+
+    const fallbackText = json?.message || response.statusText || 'Request failed';
+    throw new Error(fallbackText);
   }
 
-  return data;
+  if (!json) {
+    throw new Error('Invalid server response');
+  }
+
+  return json;
 }
 
 async function requestText(endpoint: string): Promise<string> {
@@ -54,10 +90,14 @@ async function requestText(endpoint: string): Promise<string> {
     }
   });
 
-  const text = await response.text();
+  const text = await parseTextSafe(response);
 
   if (!response.ok) {
-    throw new Error(text || 'Request failed');
+    if (response.status === 401) {
+      clearAuthSession();
+    }
+
+    throw new Error(text || response.statusText || 'Request failed');
   }
 
   return text;
@@ -74,24 +114,48 @@ export const api = {
   getProfile: async () => request<User>('/auth/me'),
 
   getStudents: async () => request<Student[]>('/students'),
+
   createStudent: async (payload: Omit<Student, '_id' | 'qrCodeValue'>) =>
-    request<Student>('/students', { method: 'POST', body: payload }),
+    request<Student>('/students', {
+      method: 'POST',
+      body: payload
+    }),
+
   updateStudent: async (
     id: string,
     payload: Partial<Omit<Student, '_id' | 'qrCodeValue'>>
-  ) => request<Student>(`/students/${id}`, { method: 'PUT', body: payload }),
+  ) =>
+    request<Student>(`/students/${id}`, {
+      method: 'PUT',
+      body: payload
+    }),
+
   deleteStudent: async (id: string) =>
-    request<{ message: string }>(`/students/${id}`, { method: 'DELETE' }),
+    request<{ message: string }>(`/students/${id}`, {
+      method: 'DELETE'
+    }),
 
   getHalls: async () => request<Hall[]>('/halls'),
+
   createHall: async (payload: Omit<Hall, '_id'>) =>
-    request<Hall>('/halls', { method: 'POST', body: payload }),
+    request<Hall>('/halls', {
+      method: 'POST',
+      body: payload
+    }),
+
   updateHall: async (id: string, payload: Partial<Omit<Hall, '_id'>>) =>
-    request<Hall>(`/halls/${id}`, { method: 'PUT', body: payload }),
+    request<Hall>(`/halls/${id}`, {
+      method: 'PUT',
+      body: payload
+    }),
+
   deleteHall: async (id: string) =>
-    request<{ message: string }>(`/halls/${id}`, { method: 'DELETE' }),
+    request<{ message: string }>(`/halls/${id}`, {
+      method: 'DELETE'
+    }),
 
   getExams: async () => request<Exam[]>('/exams'),
+
   createExam: async (payload: {
     title: string;
     subjectCode: string;
@@ -100,7 +164,12 @@ export const api = {
     endTime: string;
     hallIds: string[];
     studentIds: string[];
-  }) => request<Exam>('/exams', { method: 'POST', body: payload }),
+  }) =>
+    request<Exam>('/exams', {
+      method: 'POST',
+      body: payload
+    }),
+
   updateExam: async (
     id: string,
     payload: Partial<{
@@ -113,15 +182,23 @@ export const api = {
       hallIds: string[];
       studentIds: string[];
     }>
-  ) => request<Exam>(`/exams/${id}`, { method: 'PUT', body: payload }),
+  ) =>
+    request<Exam>(`/exams/${id}`, {
+      method: 'PUT',
+      body: payload
+    }),
+
   deleteExam: async (id: string) =>
-    request<{ message: string }>(`/exams/${id}`, { method: 'DELETE' }),
+    request<{ message: string }>(`/exams/${id}`, {
+      method: 'DELETE'
+    }),
 
   generateAllocations: async (examId: string) =>
     request<SeatAllocation[]>('/allocations/generate', {
       method: 'POST',
       body: { examId }
     }),
+
   getAllocationsByExam: async (examId: string) =>
     request<SeatAllocation[]>(`/allocations/exam/${examId}`),
 
@@ -130,33 +207,41 @@ export const api = {
       method: 'POST',
       body: { examId, qrCodeValue }
     }),
+
   markManualAttendance: async (examId: string, studentId: string, notes?: string) =>
     request<AttendanceRecord>('/attendance/manual', {
       method: 'POST',
       body: { examId, studentId, notes }
     }),
+
   syncOfflineAttendance: async (examId: string, qrCodeValues: string[]) =>
     request<OfflineSyncResult[]>('/attendance/sync-offline', {
       method: 'POST',
       body: { examId, qrCodeValues }
     }),
+
   getAttendanceByExam: async (examId: string) =>
     request<AttendanceByExamResponse>(`/attendance/exam/${examId}`),
 
   getDashboardSummary: async (examId?: string) =>
     request<DashboardSummaryResponse>(
-      `/dashboard/summary${examId ? `?examId=${examId}` : ''}`
+      `/dashboard/summary${examId ? `?examId=${encodeURIComponent(examId)}` : ''}`
     ),
 
   getExamReport: async (examId: string) =>
     request<ExamReport>(`/reports/exam/${examId}`),
+
   downloadExamReportCsv: async (examId: string) =>
     requestText(`/reports/exam/${examId}?format=csv`)
 };
 
 export function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
+  if (error instanceof Error && error.message) {
     return error.message;
+  }
+
+  if (typeof error === 'string' && error.trim()) {
+    return error;
   }
 
   return 'Something went wrong';
@@ -164,12 +249,20 @@ export function getErrorMessage(error: unknown): string {
 
 export function formatDateTime(value?: string | null): string {
   if (!value) return '-';
-  return new Date(value).toLocaleString();
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+
+  return date.toLocaleString();
 }
 
-export function formatDate(value?: string): string {
+export function formatDate(value?: string | null): string {
   if (!value) return '-';
-  return new Date(value).toLocaleDateString();
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+
+  return date.toLocaleDateString();
 }
 
 export function groupLogsBySeverity(log: ScanLog): 'success' | 'warning' | 'error' {

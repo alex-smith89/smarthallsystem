@@ -1,15 +1,16 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import AppLayout from './components/AppLayout';
 import ProtectedRoute from './components/ProtectedRoute';
+
+import DashboardPage from './pages/DashboardPage';
+import StudentsPage from './pages/StudentsPage';
+import HallsPage from './pages/HallsPage';
+import ExamsPage from './pages/ExamsPage';
 import AllocationsPage from './pages/AllocationsPage';
 import AttendanceScannerPage from './pages/AttendanceScannerPage';
-import DashboardPage from './pages/DashboardPage';
-import ExamsPage from './pages/ExamsPage';
-import HallsPage from './pages/HallsPage';
+import ReportsPage from './pages/ReportsPage';
 import LoginPage from './pages/LoginPage';
 import NotFoundPage from './pages/NotFoundPage';
-import ReportsPage from './pages/ReportsPage';
-import StudentsPage from './pages/StudentsPage';
 
 export default function App() {
   return (
@@ -35,7 +36,7 @@ export default function App() {
         <Route path="404" element={<NotFoundPage />} />
       </Route>
 
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to="/404" replace />} />
     </Routes>
   );
 }

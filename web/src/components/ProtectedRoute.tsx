@@ -1,17 +1,28 @@
 import type { ReactNode } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import LoadingScreen from './LoadingScreen';
 
-export default function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth();
+type ProtectedRouteProps = {
+  children: ReactNode;
+};
+
+export default function ProtectedRoute({ children }: ProtectedRouteProps) {
+  const { loading, isAuthenticated } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return <LoadingScreen text="Checking your session..." />;
   }
 
-  if (!user) {
-    return <Navigate to="/login" replace />;
+  if (!isAuthenticated) {
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: location.pathname }}
+      />
+    );
   }
 
   return <>{children}</>;
