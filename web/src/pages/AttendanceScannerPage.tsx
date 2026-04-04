@@ -1,14 +1,44 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import LoadingScreen from '../components/LoadingScreen';
-import { api, formatDateTime, getErrorMessage, groupLogsBySeverity } from '../lib/api';
-import type { AttendanceRecord, Exam, OfflineSyncResult, ScanLog } from '../types';
+import {
+  api,
+  formatDateTime,
+  getErrorMessage,
+  groupLogsBySeverity
+} from '../lib/api';
+import type {
+  AttendanceRecord,
+  Exam,
+  OfflineSyncResult,
+  ScanLog,
+  SeatAllocation
+} from '../types';
 import {
   clearOfflineQueue,
   enqueueOfflineScan,
   getOfflineQueue,
   setOfflineQueue
 } from '../utils/storage';
+
+type ScanStatus = 'success' | 'duplicate' | 'invalid' | 'offline' | 'manual' | null;
+
+type ScanResultState = {
+  status: ScanStatus;
+  title: string;
+  message: string;
+  studentName?: string;
+  rollNumber?: string;
+  hallName?: string;
+  seatNumber?: string;
+  scannedAt?: string;
+};
+
+const initialScanResult: ScanResultState = {
+  status: null,
+  title: '',
+  message: ''
+};
 
 export default function AttendanceScannerPage() {
   const scannerRef = useRef<Html5Qrcode | null>(null);
@@ -17,14 +47,64 @@ export default function AttendanceScannerPage() {
   const [exams, setExams] = useState<Exam[]>([]);
   const [selectedExamId, setSelectedExamId] = useState('');
   const [scannerActive, setScannerActive] = useState(false);
+
   const [manualStudentId, setManualStudentId] = useState('');
+  const [manualSearch, setManualSearch] = useState('');
   const [manualNotes, setManualNotes] = useState('');
+
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [logs, setLogs] = useState<ScanLog[]>([]);
+  const [allocations, setAllocations] = useState<SeatAllocation[]>([]);
+
+  const [scanResult, setScanResult] = useState<ScanResultState>(initialScanResult);
+
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [startingScanner, setStartingScanner] = useState(false);
+
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+
+  const selectedExam = useMemo(
+    () => exams.find((exam) => exam._id === selectedExamId) || null,
+    [exams, selectedExamId]
+  );
+
+  const offlineQueue = selectedExamId ? getOfflineQueue(selectedExamId) : [];
+
+  const seatMap = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        seatNumber: string;
+        hallName: string;
+      }
+    >();
+
+    allocations.forEach((allocation) => {
+      map.set(allocation.studentId._id, {
+        seatNumber: allocation.seatNumber,
+        hallName: allocation.hallId.name
+      });
+    });
+
+    return map;
+  }, [allocations]);
+
+  const filteredManualStudents = useMemo(() => {
+    const students = selectedExam?.studentIds ?? [];
+    const keyword = manualSearch.trim().toLowerCase();
+
+    if (!keyword) {
+      return students;
+    }
+
+    return students.filter((student) => {
+      const name = student.fullName.toLowerCase();
+      const roll = student.rollNumber.toLowerCase();
+      return name.includes(keyword) || roll.includes(keyword);
+    });
+  }, [selectedExam, manualSearch]);
 
   async function loadExams() {
     const response = await api.getExams();
@@ -36,11 +116,22 @@ export default function AttendanceScannerPage() {
   }
 
   async function loadAttendance(examId: string) {
+    const response = await api.getAttendanceByExam(examId);
+    setAttendance(response.data.attendance);
+    setLogs(response.data.logs);
+  }
+
+  async function loadAllocations(examId: string) {
+    const response = await api.getAllocationsByExam(examId);
+    setAllocations(response.data);
+  }
+
+  async function loadSelectedExamData(examId: string) {
     setLoading(true);
+    setError('');
+
     try {
-      const response = await api.getAttendanceByExam(examId);
-      setAttendance(response.data.attendance);
-      setLogs(response.data.logs);
+      await Promise.all([loadAttendance(examId), loadAllocations(examId)]);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -68,20 +159,79 @@ export default function AttendanceScannerPage() {
   useEffect(() => {
     if (!selectedExamId) return;
 
-    void loadAttendance(selectedExamId);
+    void loadSelectedExamData(selectedExamId);
 
-    const selectedExam = exams.find((exam) => exam._id === selectedExamId);
-    if (selectedExam?.studentIds.length) {
-      setManualStudentId(selectedExam.studentIds[0]._id);
+    const exam = exams.find((item) => item._id === selectedExamId);
+    if (exam?.studentIds.length) {
+      setManualStudentId(exam.studentIds[0]._id);
+    } else {
+      setManualStudentId('');
     }
+
+    setManualSearch('');
+    setScanResult(initialScanResult);
   }, [selectedExamId, exams]);
 
-  const selectedExam = useMemo(
-    () => exams.find((exam) => exam._id === selectedExamId) || null,
-    [exams, selectedExamId]
-  );
+  useEffect(() => {
+    if (!manualStudentId && filteredManualStudents.length > 0) {
+      setManualStudentId(filteredManualStudents[0]._id);
+    }
 
-  const offlineQueue = selectedExamId ? getOfflineQueue(selectedExamId) : [];
+    if (
+      manualStudentId &&
+      filteredManualStudents.length > 0 &&
+      !filteredManualStudents.some((student) => student._id === manualStudentId)
+    ) {
+      setManualStudentId(filteredManualStudents[0]._id);
+    }
+  }, [filteredManualStudents, manualStudentId]);
+
+  function playTone(type: 'success' | 'warning' | 'error') {
+    try {
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+      if (!AudioContextClass) return;
+
+      const audioContext = new AudioContextClass();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+
+      if (type === 'success') {
+        oscillator.frequency.value = 880;
+      } else if (type === 'warning') {
+        oscillator.frequency.value = 520;
+      } else {
+        oscillator.frequency.value = 240;
+      }
+
+      gainNode.gain.value = 0.08;
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + 0.12);
+
+      oscillator.onended = () => {
+        void audioContext.close();
+      };
+    } catch {
+      // ignore sound issues
+    }
+  }
+
+  function updateScanResult(next: ScanResultState) {
+    setScanResult(next);
+
+    if (next.status === 'success' || next.status === 'manual') {
+      playTone('success');
+    } else if (next.status === 'duplicate' || next.status === 'offline') {
+      playTone('warning');
+    } else if (next.status === 'invalid') {
+      playTone('error');
+    }
+  }
 
   async function startScanner() {
     if (!selectedExamId) {
@@ -91,66 +241,115 @@ export default function AttendanceScannerPage() {
 
     setError('');
     setMessage('');
+    setStartingScanner(true);
 
-    if (scannerRef.current) {
+    try {
       await stopScanner();
-    }
 
-    const scanner = new Html5Qrcode('scan-reader');
-    scannerRef.current = scanner;
+      const scanner = new Html5Qrcode('scan-reader');
+      scannerRef.current = scanner;
 
-    await scanner.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 250, height: 250 } },
-      async (decodedText) => {
-        if (processingRef.current) return;
+      await scanner.start(
+        { facingMode: 'environment' },
+        {
+          fps: 10,
+          qrbox: { width: 260, height: 260 }
+        },
+        async (decodedText) => {
+          if (processingRef.current) return;
 
-        processingRef.current = true;
+          processingRef.current = true;
+          setError('');
+          setMessage('');
 
-        try {
-          const response = await api.scanAttendance(selectedExamId, decodedText);
-          setMessage(
-            response.message ||
-              (response.warning
-                ? 'Duplicate scan detected.'
-                : 'Attendance marked successfully.')
-          );
-          await loadAttendance(selectedExamId);
-        } catch (err) {
-          const messageText = getErrorMessage(err);
+          try {
+            const response = await api.scanAttendance(selectedExamId, decodedText);
+            const record = response.data;
+            const seatInfo = seatMap.get(record.studentId._id);
 
-          if (!navigator.onLine || /failed to fetch/i.test(messageText.toLowerCase())) {
-            enqueueOfflineScan(selectedExamId, decodedText);
-            setMessage('Network problem detected. Scan saved locally for offline sync.');
-          } else {
-            setError(messageText);
+            const duplicateDetected = Boolean(response.warning);
+
+            updateScanResult({
+              status: duplicateDetected ? 'duplicate' : 'success',
+              title: duplicateDetected ? 'Duplicate Scan' : 'Valid Scan',
+              message:
+                response.message ||
+                (duplicateDetected
+                  ? 'Attendance was already marked earlier.'
+                  : 'Attendance marked successfully.'),
+              studentName: record.studentId.fullName,
+              rollNumber: record.studentId.rollNumber,
+              hallName: record.hallId.name || seatInfo?.hallName || '-',
+              seatNumber: seatInfo?.seatNumber || '-',
+              scannedAt: record.scannedAt
+            });
+
+            setMessage(
+              response.message ||
+                (duplicateDetected
+                  ? 'Duplicate scan detected.'
+                  : 'Attendance marked successfully.')
+            );
+
+            await loadAttendance(selectedExamId);
+          } catch (err) {
+            const messageText = getErrorMessage(err);
+
+            if (!navigator.onLine || /failed to fetch/i.test(messageText.toLowerCase())) {
+              enqueueOfflineScan(selectedExamId, decodedText);
+
+              updateScanResult({
+                status: 'offline',
+                title: 'Saved Offline',
+                message:
+                  'Internet connection is unavailable. This scan was stored in offline queue.'
+              });
+
+              setMessage('Network issue detected. Scan saved in offline queue.');
+            } else {
+              updateScanResult({
+                status: 'invalid',
+                title: 'Invalid Scan',
+                message: messageText
+              });
+
+              setError(messageText);
+            }
+          } finally {
+            window.setTimeout(() => {
+              processingRef.current = false;
+            }, 1200);
           }
-        } finally {
-          setTimeout(() => {
-            processingRef.current = false;
-          }, 1200);
+        },
+        () => {
+          // ignore per-frame scan errors
         }
-      },
-      () => {
-        // ignore frame parse errors
-      }
-    );
+      );
 
-    setScannerActive(true);
+      setScannerActive(true);
+    } catch (err) {
+      setError(getErrorMessage(err));
+      setScannerActive(false);
+    } finally {
+      setStartingScanner(false);
+    }
   }
 
   async function stopScanner() {
     if (scannerRef.current) {
       try {
-        if (scannerRef.current.isScanning) {
-          await scannerRef.current.stop();
-        }
+        await scannerRef.current.stop();
+      } catch {
+        // ignore stop errors
+      }
+
+      try {
         await scannerRef.current.clear();
       } catch {
-        // ignore
-      } finally {
-        scannerRef.current = null;
+        // ignore clear errors
       }
+
+      scannerRef.current = null;
     }
 
     setScannerActive(false);
@@ -158,6 +357,7 @@ export default function AttendanceScannerPage() {
 
   async function handleManualSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
     if (!selectedExamId || !manualStudentId) return;
 
     setError('');
@@ -169,11 +369,34 @@ export default function AttendanceScannerPage() {
         manualStudentId,
         manualNotes
       );
+
+      const record = response.data;
+      const seatInfo = seatMap.get(record.studentId._id);
+
+      updateScanResult({
+        status: 'manual',
+        title: 'Manual Attendance Marked',
+        message: response.message || 'Attendance marked manually.',
+        studentName: record.studentId.fullName,
+        rollNumber: record.studentId.rollNumber,
+        hallName: record.hallId.name || seatInfo?.hallName || '-',
+        seatNumber: seatInfo?.seatNumber || '-',
+        scannedAt: record.scannedAt
+      });
+
       setMessage(response.message || 'Manual attendance marked successfully.');
       setManualNotes('');
       await loadAttendance(selectedExamId);
     } catch (err) {
-      setError(getErrorMessage(err));
+      const messageText = getErrorMessage(err);
+
+      updateScanResult({
+        status: 'invalid',
+        title: 'Manual Attendance Failed',
+        message: messageText
+      });
+
+      setError(messageText);
     }
   }
 
@@ -193,19 +416,45 @@ export default function AttendanceScannerPage() {
 
       if (failed.length > 0) {
         setOfflineQueue(selectedExamId, failed);
-        setMessage(`Offline sync completed with ${failed.length} remaining failed item(s).`);
+        setMessage(`Offline sync completed. ${failed.length} record(s) still failed.`);
       } else {
         clearOfflineQueue(selectedExamId);
         setMessage('All offline attendance records synced successfully.');
       }
 
+      updateScanResult({
+        status: failed.length > 0 ? 'offline' : 'success',
+        title: failed.length > 0 ? 'Offline Sync Partial' : 'Offline Sync Complete',
+        message:
+          failed.length > 0
+            ? `${failed.length} record(s) still remain in offline queue.`
+            : 'All offline attendance records synced successfully.'
+      });
+
       await loadAttendance(selectedExamId);
     } catch (err) {
-      setError(getErrorMessage(err));
+      const messageText = getErrorMessage(err);
+
+      updateScanResult({
+        status: 'invalid',
+        title: 'Offline Sync Failed',
+        message: messageText
+      });
+
+      setError(messageText);
     } finally {
       setSyncing(false);
     }
   }
+
+  const resultClassName =
+    scanResult.status === 'success' || scanResult.status === 'manual'
+      ? 'alert alert-success'
+      : scanResult.status === 'duplicate' || scanResult.status === 'offline'
+        ? 'alert alert-info'
+        : scanResult.status === 'invalid'
+          ? 'alert alert-error'
+          : '';
 
   if (loading && !selectedExamId) {
     return <LoadingScreen text="Loading attendance module..." />;
@@ -218,8 +467,8 @@ export default function AttendanceScannerPage() {
           <div>
             <h3>QR Attendance Scanner</h3>
             <p>
-              Scan student QR codes, handle duplicate and invalid scans, and sync
-              offline records.
+              Scan student QR codes, detect duplicate or invalid scans, mark manual
+              attendance, and sync offline records.
             </p>
           </div>
 
@@ -243,12 +492,15 @@ export default function AttendanceScannerPage() {
               <button
                 className="btn btn-primary"
                 onClick={() => void startScanner()}
-                disabled={!selectedExamId}
+                disabled={!selectedExamId || startingScanner}
               >
-                Start Scanner
+                {startingScanner ? 'Starting...' : 'Start Scanner'}
               </button>
             ) : (
-              <button className="btn btn-secondary" onClick={() => void stopScanner()}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => void stopScanner()}
+              >
                 Stop Scanner
               </button>
             )}
@@ -263,6 +515,36 @@ export default function AttendanceScannerPage() {
           </div>
         </div>
 
+        {scanResult.status ? (
+          <div className={resultClassName}>
+            <div className="card-header-row compact-row">
+              <strong>{scanResult.title}</strong>
+              <span>
+                {scanResult.scannedAt ? formatDateTime(scanResult.scannedAt) : ''}
+              </span>
+            </div>
+
+            <p style={{ marginTop: 0 }}>{scanResult.message}</p>
+
+            {(scanResult.studentName || scanResult.rollNumber || scanResult.hallName || scanResult.seatNumber) ? (
+              <div className="details-grid">
+                <div>
+                  <strong>Student:</strong> {scanResult.studentName || '-'}
+                </div>
+                <div>
+                  <strong>Roll Number:</strong> {scanResult.rollNumber || '-'}
+                </div>
+                <div>
+                  <strong>Hall:</strong> {scanResult.hallName || '-'}
+                </div>
+                <div>
+                  <strong>Seat:</strong> {scanResult.seatNumber || '-'}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         {message ? <div className="alert alert-success">{message}</div> : null}
         {error ? <div className="alert alert-error">{error}</div> : null}
 
@@ -271,26 +553,41 @@ export default function AttendanceScannerPage() {
             <h4>Live Scanner</h4>
             <div id="scan-reader" className="scanner-box" />
             <div className="scanner-help">
-              <p>Use camera-based QR scanning for fast attendance.</p>
-              <p>If internet fails, scanned values can be queued and synced later.</p>
+              <p>Use the invigilator phone camera to scan each student QR code at the entrance.</p>
+              <p>After each scan, the system shows student name, roll, hall, and seat.</p>
+              <p>If internet fails, scanned values can be saved offline and synced later.</p>
             </div>
           </div>
 
           <div className="scanner-panel">
             <h4>Manual Attendance Fallback</h4>
+
             <form className="form-grid" onSubmit={handleManualSubmit}>
               <label className="form-field">
-                <span>Student</span>
+                <span>Search Student by Roll or Name</span>
+                <input
+                  value={manualSearch}
+                  onChange={(event) => setManualSearch(event.target.value)}
+                  placeholder="Search roll number or student name"
+                />
+              </label>
+
+              <label className="form-field">
+                <span>Select Student</span>
                 <select
                   value={manualStudentId}
                   onChange={(event) => setManualStudentId(event.target.value)}
                   required
                 >
-                  {(selectedExam?.studentIds ?? []).map((student) => (
-                    <option key={student._id} value={student._id}>
-                      {student.rollNumber} - {student.fullName}
-                    </option>
-                  ))}
+                  {filteredManualStudents.length === 0 ? (
+                    <option value="">No matching student found</option>
+                  ) : (
+                    filteredManualStudents.map((student) => (
+                      <option key={student._id} value={student._id}>
+                        {student.rollNumber} - {student.fullName}
+                      </option>
+                    ))
+                  )}
                 </select>
               </label>
 
@@ -329,6 +626,7 @@ export default function AttendanceScannerPage() {
                 <th>Student</th>
                 <th>Roll</th>
                 <th>Hall</th>
+                <th>Seat</th>
                 <th>Method</th>
                 <th>Status</th>
                 <th>Scanned At</th>
@@ -336,19 +634,24 @@ export default function AttendanceScannerPage() {
               </tr>
             </thead>
             <tbody>
-              {attendance.map((record) => (
-                <tr key={record._id}>
-                  <td>{record.studentId.fullName}</td>
-                  <td>{record.studentId.rollNumber}</td>
-                  <td>{record.hallId.name}</td>
-                  <td>{record.scanMethod}</td>
-                  <td>
-                    <span className="pill pill-active">{record.status}</span>
-                  </td>
-                  <td>{formatDateTime(record.scannedAt)}</td>
-                  <td>{record.notes || '-'}</td>
-                </tr>
-              ))}
+              {attendance.map((record) => {
+                const seatInfo = seatMap.get(record.studentId._id);
+
+                return (
+                  <tr key={record._id}>
+                    <td>{record.studentId.fullName}</td>
+                    <td>{record.studentId.rollNumber}</td>
+                    <td>{record.hallId.name}</td>
+                    <td>{seatInfo?.seatNumber || '-'}</td>
+                    <td>{record.scanMethod}</td>
+                    <td>
+                      <span className="pill pill-active">{record.status}</span>
+                    </td>
+                    <td>{formatDateTime(record.scannedAt)}</td>
+                    <td>{record.notes || '-'}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
