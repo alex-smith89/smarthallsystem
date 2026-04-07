@@ -61,6 +61,8 @@ export default function AttendanceScannerPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [startingScanner, setStartingScanner] = useState(false);
+  const [uploadScanning, setUploadScanning] = useState(false);
+  const [uploadedFileName, setUploadedFileName] = useState('');
 
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -190,7 +192,8 @@ export default function AttendanceScannerPage() {
     try {
       const AudioContextClass =
         window.AudioContext ||
-        (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
 
       if (!AudioContextClass) return;
 
@@ -233,6 +236,88 @@ export default function AttendanceScannerPage() {
     }
   }
 
+  async function processDecodedQrValue(decodedText: string, source: 'camera' | 'upload') {
+    if (!selectedExamId) {
+      setError('Please select an exam first.');
+      return;
+    }
+
+    if (processingRef.current) return;
+
+    processingRef.current = true;
+    setError('');
+    setMessage('');
+
+    try {
+      const response = await api.scanAttendance(selectedExamId, decodedText);
+      const record = response.data;
+      const seatInfo = seatMap.get(record.studentId._id);
+
+      const duplicateDetected = Boolean(response.warning);
+
+      updateScanResult({
+        status: duplicateDetected ? 'duplicate' : 'success',
+        title: duplicateDetected
+          ? source === 'upload'
+            ? 'Duplicate Uploaded QR'
+            : 'Duplicate Scan'
+          : source === 'upload'
+            ? 'Uploaded QR Verified'
+            : 'Valid Scan',
+        message:
+          response.message ||
+          (duplicateDetected
+            ? 'Attendance was already marked earlier.'
+            : source === 'upload'
+              ? 'Uploaded QR verified and attendance marked successfully.'
+              : 'Attendance marked successfully.'),
+        studentName: record.studentId.fullName,
+        rollNumber: record.studentId.rollNumber,
+        hallName: record.hallId.name || seatInfo?.hallName || '-',
+        seatNumber: seatInfo?.seatNumber || '-',
+        scannedAt: record.scannedAt
+      });
+
+      setMessage(
+        response.message ||
+          (duplicateDetected
+            ? 'Duplicate scan detected.'
+            : source === 'upload'
+              ? 'Uploaded QR processed successfully.'
+              : 'Attendance marked successfully.')
+      );
+
+      await loadAttendance(selectedExamId);
+    } catch (err) {
+      const messageText = getErrorMessage(err);
+
+      if (!navigator.onLine || /failed to fetch/i.test(messageText.toLowerCase())) {
+        enqueueOfflineScan(selectedExamId, decodedText);
+
+        updateScanResult({
+          status: 'offline',
+          title: source === 'upload' ? 'Uploaded QR Saved Offline' : 'Saved Offline',
+          message:
+            'Internet connection is unavailable. This scan was stored in offline queue.'
+        });
+
+        setMessage('Network issue detected. Scan saved in offline queue.');
+      } else {
+        updateScanResult({
+          status: 'invalid',
+          title: source === 'upload' ? 'Uploaded QR Invalid' : 'Invalid Scan',
+          message: messageText || 'Something went wrong'
+        });
+
+        setError(messageText || 'Something went wrong');
+      }
+    } finally {
+      window.setTimeout(() => {
+        processingRef.current = false;
+      }, 1200);
+    }
+  }
+
   async function startScanner() {
     if (!selectedExamId) {
       setError('Please select an exam first.');
@@ -255,74 +340,9 @@ export default function AttendanceScannerPage() {
           fps: 10,
           qrbox: { width: 260, height: 260 }
         },
-        async (decodedText) => {
-          if (processingRef.current) return;
-
-          processingRef.current = true;
-          setError('');
-          setMessage('');
-
-          try {
-            const response = await api.scanAttendance(selectedExamId, decodedText);
-            const record = response.data;
-            const seatInfo = seatMap.get(record.studentId._id);
-
-            const duplicateDetected = Boolean(response.warning);
-
-            updateScanResult({
-              status: duplicateDetected ? 'duplicate' : 'success',
-              title: duplicateDetected ? 'Duplicate Scan' : 'Valid Scan',
-              message:
-                response.message ||
-                (duplicateDetected
-                  ? 'Attendance was already marked earlier.'
-                  : 'Attendance marked successfully.'),
-              studentName: record.studentId.fullName,
-              rollNumber: record.studentId.rollNumber,
-              hallName: record.hallId.name || seatInfo?.hallName || '-',
-              seatNumber: seatInfo?.seatNumber || '-',
-              scannedAt: record.scannedAt
-            });
-
-            setMessage(
-              response.message ||
-                (duplicateDetected
-                  ? 'Duplicate scan detected.'
-                  : 'Attendance marked successfully.')
-            );
-
-            await loadAttendance(selectedExamId);
-          } catch (err) {
-            const messageText = getErrorMessage(err);
-
-            if (!navigator.onLine || /failed to fetch/i.test(messageText.toLowerCase())) {
-              enqueueOfflineScan(selectedExamId, decodedText);
-
-              updateScanResult({
-                status: 'offline',
-                title: 'Saved Offline',
-                message:
-                  'Internet connection is unavailable. This scan was stored in offline queue.'
-              });
-
-              setMessage('Network issue detected. Scan saved in offline queue.');
-            } else {
-              updateScanResult({
-                status: 'invalid',
-                title: 'Invalid Scan',
-                message: messageText
-              });
-
-              setError(messageText);
-            }
-          } finally {
-            window.setTimeout(() => {
-              processingRef.current = false;
-            }, 1200);
-          }
-        },
+        (decodedText) => void processDecodedQrValue(decodedText, 'camera'),
         () => {
-          // ignore per-frame scan errors
+          // ignore frame scan errors
         }
       );
 
@@ -353,6 +373,137 @@ export default function AttendanceScannerPage() {
     }
 
     setScannerActive(false);
+  }
+
+  async function convertSvgFileToPngFile(file: File): Promise<File> {
+    const svgText = await file.text();
+    const svgBlob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+    const svgUrl = URL.createObjectURL(svgBlob);
+
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Could not load SVG image.'));
+        img.src = svgUrl;
+      });
+
+      const intrinsicWidth = image.naturalWidth || image.width || 1024;
+      const intrinsicHeight = image.naturalHeight || image.height || 1024;
+      const size = Math.max(intrinsicWidth, intrinsicHeight, 1024);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+
+      const context = canvas.getContext('2d');
+      if (!context) {
+        throw new Error('Canvas is not supported in this browser.');
+      }
+
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, size, size);
+
+      const scale = Math.min(size / intrinsicWidth, size / intrinsicHeight);
+      const drawWidth = intrinsicWidth * scale;
+      const drawHeight = intrinsicHeight * scale;
+      const offsetX = (size - drawWidth) / 2;
+      const offsetY = (size - drawHeight) / 2;
+
+      context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+
+      const pngBlob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (blob) {
+            resolve(blob);
+          } else {
+            reject(new Error('Could not convert SVG to PNG.'));
+          }
+        }, 'image/png');
+      });
+
+      const pngName = file.name.replace(/\.svg$/i, '.png');
+
+      return new File([pngBlob], pngName, {
+        type: 'image/png'
+      });
+    } finally {
+      URL.revokeObjectURL(svgUrl);
+    }
+  }
+
+  async function scanQrFromUploadedFile(file: File): Promise<string> {
+    const tempElementId = `scan-upload-${Date.now()}`;
+    const tempElement = document.createElement('div');
+    tempElement.id = tempElementId;
+    tempElement.style.position = 'fixed';
+    tempElement.style.left = '-99999px';
+    tempElement.style.top = '0';
+    tempElement.style.width = '1px';
+    tempElement.style.height = '1px';
+    tempElement.style.opacity = '0';
+    document.body.appendChild(tempElement);
+
+    const tempScanner = new Html5Qrcode(tempElementId);
+
+    try {
+      return await tempScanner.scanFile(file, false);
+    } finally {
+      try {
+        await tempScanner.clear();
+      } catch {
+        // ignore clear issues
+      }
+
+      tempElement.remove();
+    }
+  }
+
+  async function handleUploadQrFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const originalFile = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!originalFile) return;
+
+    if (!selectedExamId) {
+      setError('Please select an exam first.');
+      return;
+    }
+
+    setUploadScanning(true);
+    setUploadedFileName(originalFile.name);
+    setError('');
+    setMessage('');
+
+    try {
+      if (scannerActive) {
+        await stopScanner();
+      }
+
+      let fileToScan = originalFile;
+      const isSvg =
+        originalFile.type === 'image/svg+xml' || /\.svg$/i.test(originalFile.name);
+
+      if (isSvg) {
+        fileToScan = await convertSvgFileToPngFile(originalFile);
+        setMessage('SVG converted to PNG for better QR scanning.');
+      }
+
+      const decodedText = await scanQrFromUploadedFile(fileToScan);
+      await processDecodedQrValue(decodedText, 'upload');
+    } catch (err) {
+      const messageText = getErrorMessage(err);
+
+      updateScanResult({
+        status: 'invalid',
+        title: 'Upload Scan Failed',
+        message: messageText || 'Could not read this QR image. Try PNG download instead.'
+      });
+
+      setError(messageText || 'Could not read this QR image. Try PNG download instead.');
+    } finally {
+      setUploadScanning(false);
+    }
   }
 
   async function handleManualSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -393,10 +544,10 @@ export default function AttendanceScannerPage() {
       updateScanResult({
         status: 'invalid',
         title: 'Manual Attendance Failed',
-        message: messageText
+        message: messageText || 'Something went wrong'
       });
 
-      setError(messageText);
+      setError(messageText || 'Something went wrong');
     }
   }
 
@@ -438,10 +589,10 @@ export default function AttendanceScannerPage() {
       updateScanResult({
         status: 'invalid',
         title: 'Offline Sync Failed',
-        message: messageText
+        message: messageText || 'Something went wrong'
       });
 
-      setError(messageText);
+      setError(messageText || 'Something went wrong');
     } finally {
       setSyncing(false);
     }
@@ -467,8 +618,8 @@ export default function AttendanceScannerPage() {
           <div>
             <h3>QR Attendance Scanner</h3>
             <p>
-              Scan student QR codes, detect duplicate or invalid scans, mark manual
-              attendance, and sync offline records.
+              Scan student QR codes, upload downloaded QR images, detect duplicate or
+              invalid scans, mark manual attendance, and sync offline records.
             </p>
           </div>
 
@@ -492,15 +643,12 @@ export default function AttendanceScannerPage() {
               <button
                 className="btn btn-primary"
                 onClick={() => void startScanner()}
-                disabled={!selectedExamId || startingScanner}
+                disabled={!selectedExamId || startingScanner || uploadScanning}
               >
                 {startingScanner ? 'Starting...' : 'Start Scanner'}
               </button>
             ) : (
-              <button
-                className="btn btn-secondary"
-                onClick={() => void stopScanner()}
-              >
+              <button className="btn btn-secondary" onClick={() => void stopScanner()}>
                 Stop Scanner
               </button>
             )}
@@ -526,7 +674,10 @@ export default function AttendanceScannerPage() {
 
             <p style={{ marginTop: 0 }}>{scanResult.message}</p>
 
-            {(scanResult.studentName || scanResult.rollNumber || scanResult.hallName || scanResult.seatNumber) ? (
+            {scanResult.studentName ||
+            scanResult.rollNumber ||
+            scanResult.hallName ||
+            scanResult.seatNumber ? (
               <div className="details-grid">
                 <div>
                   <strong>Student:</strong> {scanResult.studentName || '-'}
@@ -552,10 +703,41 @@ export default function AttendanceScannerPage() {
           <div className="scanner-panel">
             <h4>Live Scanner</h4>
             <div id="scan-reader" className="scanner-box" />
+
             <div className="scanner-help">
               <p>Use the invigilator phone camera to scan each student QR code at the entrance.</p>
               <p>After each scan, the system shows student name, roll, hall, and seat.</p>
               <p>If internet fails, scanned values can be saved offline and synced later.</p>
+            </div>
+
+            <div className="upload-scan-box">
+              <div className="upload-scan-header">
+                <strong>Upload QR Image to Scanner</strong>
+                <span>
+                  Use the downloaded QR PNG, JPG, WEBP, or SVG. PNG works best; SVG will
+                  be converted before scanning.
+                </span>
+              </div>
+
+              <label className="form-field">
+                <span>Upload QR image file</span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
+                  onChange={handleUploadQrFile}
+                  disabled={!selectedExamId || uploadScanning}
+                />
+              </label>
+
+              <div className="upload-scan-meta">
+                <span>
+                  {uploadScanning
+                    ? 'Reading uploaded QR image...'
+                    : uploadedFileName
+                      ? `Last uploaded file: ${uploadedFileName}`
+                      : 'No QR image uploaded yet.'}
+                </span>
+              </div>
             </div>
           </div>
 

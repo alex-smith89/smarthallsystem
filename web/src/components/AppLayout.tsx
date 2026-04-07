@@ -49,7 +49,7 @@ const pageMeta: Record<string, { title: string; subtitle: string }> = {
   '/students': {
     title: 'Students',
     subtitle:
-      'Manage students, preview QR codes, and print QR attendance cards.'
+      'Manage students, preview QR codes, download QR files, and print QR attendance cards.'
   },
   '/halls': {
     title: 'Halls',
@@ -69,7 +69,7 @@ const pageMeta: Record<string, { title: string; subtitle: string }> = {
   '/attendance': {
     title: 'Attendance Scanner',
     subtitle:
-      'Scan QR codes, handle duplicate or invalid scans, and mark manual attendance.'
+      'Scan QR codes, upload QR images, handle duplicate or invalid scans, and mark manual attendance.'
   },
   '/scanner': {
     title: 'Attendance Scanner',
@@ -143,17 +143,35 @@ export default function AppLayout() {
       <main className="page-shell">
         <header className="page-header">
           <div className="card">
-            <div className="card-header-row" style={{ marginBottom: 0 }}>
+            <div
+              className="card-header-row page-header-top"
+              style={{ marginBottom: 0 }}
+            >
               <div>
                 <h2 style={{ marginBottom: '8px' }}>{currentPage.title}</h2>
                 <p>{currentPage.subtitle}</p>
               </div>
 
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontWeight: 700 }}>{user?.name}</div>
-                <div style={{ color: '#64748b', textTransform: 'capitalize' }}>
-                  {user?.role}
+              <div className="page-header-user-block">
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontWeight: 700 }}>{user?.name || 'User'}</div>
+                  <div
+                    style={{
+                      color: '#64748b',
+                      textTransform: 'capitalize'
+                    }}
+                  >
+                    {user?.role || 'user'}
+                  </div>
                 </div>
+
+                <button
+                  type="button"
+                  className="btn btn-secondary header-logout-btn"
+                  onClick={logout}
+                >
+                  Logout
+                </button>
               </div>
             </div>
           </div>
