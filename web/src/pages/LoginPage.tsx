@@ -7,8 +7,8 @@ export default function LoginPage() {
   const { login, user } = useAuth();
 
   const [email, setEmail] = useState('admin@example.com');
-  const [password, setPassword] = useState('Admin123!');
-  const [error, setError] = useState('');
+  const [password, setPassword] = useState('Admin@123!');
+  const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   if (user) {
@@ -17,8 +17,8 @@ export default function LoginPage() {
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setError(null);
     setSubmitting(true);
-    setError('');
 
     try {
       await login(email, password);
@@ -29,30 +29,42 @@ export default function LoginPage() {
     }
   }
 
-  function fillAdminDemo() {
-    setEmail('admin@example.com');
-    setPassword('Admin123!');
-    setError('');
-  }
-
-  function fillInvigilatorDemo() {
-    setEmail('invigilator@example.com');
-    setPassword('Invigilator123!');
-    setError('');
-  }
-
   return (
     <div className="auth-page">
-      <div className="auth-card">
-        <div className="auth-intro">
-          <h1>Smart Exam Hall & Attendance System</h1>
+      <div className="auth-shell">
+        <div className="auth-hero glass-panel">
+          <span className="auth-badge">Cyan / Aqua Glassmorphism</span>
+          <h1>Smart Digital Exam Hall Management</h1>
           <p>
-            Login to manage automatic seat allocation, QR attendance scanning,
-            real-time hall monitoring, dashboard tracking, and reports.
+            Secure admin access for seat allocation, QR attendance, real-time dashboard,
+            reports, and exam scheduling.
           </p>
+
+          <div className="auth-feature-list">
+            <div className="auth-feature-item">
+              <strong>Automatic seat planning</strong>
+              <span>Hall size, seat numbering, and exam assignment support.</span>
+            </div>
+            <div className="auth-feature-item">
+              <strong>QR attendance</strong>
+              <span>Fast scan, duplicate detection, and invalid QR protection.</span>
+            </div>
+            <div className="auth-feature-item">
+              <strong>Live dashboard</strong>
+              <span>Track present count, hall occupancy, and recent scans instantly.</span>
+            </div>
+          </div>
         </div>
 
-        <form className="form-grid" onSubmit={handleSubmit}>
+        <form className="auth-card glass-panel" onSubmit={handleSubmit}>
+          <div>
+            <p className="section-eyebrow">Admin Login</p>
+            <h2>Welcome back</h2>
+            <p className="muted-text">
+              Login to manage exams, students, halls, allocations, and attendance.
+            </p>
+          </div>
+
           <label className="form-field">
             <span>Email</span>
             <input
@@ -60,8 +72,8 @@ export default function LoginPage() {
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="Enter your email"
-              required
               autoComplete="email"
+              required
             />
           </label>
 
@@ -72,55 +84,22 @@ export default function LoginPage() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               placeholder="Enter your password"
-              required
               autoComplete="current-password"
+              required
             />
           </label>
 
           {error ? <div className="alert alert-error">{error}</div> : null}
 
-          <button className="btn btn-primary" disabled={submitting} type="submit">
-            {submitting ? 'Signing in...' : 'Login'}
+          <button className="primary-button auth-submit" type="submit" disabled={submitting}>
+            {submitting ? 'Signing in...' : 'Login to dashboard'}
           </button>
+
+          <div className="demo-credentials">
+            <span>Demo credentials</span>
+            <strong>admin@example.com / Admin@123!</strong>
+          </div>
         </form>
-
-        <div className="demo-box">
-          <p><strong>Demo Login Accounts</strong></p>
-
-          <div className="form-actions">
-            <button type="button" className="btn btn-secondary" onClick={fillAdminDemo}>
-              Use Admin Demo
-            </button>
-
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={fillInvigilatorDemo}
-            >
-              Use Invigilator Demo
-            </button>
-          </div>
-
-          <div style={{ marginTop: '12px' }}>
-            <p style={{ margin: '6px 0' }}>
-              <strong>Admin:</strong> admin@example.com / Admin123!
-            </p>
-            <p style={{ margin: '6px 0' }}>
-              <strong>Invigilator:</strong> invigilator@example.com / Invigilator123!
-            </p>
-          </div>
-        </div>
-
-        <div className="demo-box" style={{ marginTop: '14px' }}>
-          <p><strong>What you can do after login</strong></p>
-          <ul style={{ margin: '8px 0 0 18px', padding: 0 }}>
-            <li>Create and manage students, halls, and exams</li>
-            <li>Generate seat allocations automatically</li>
-            <li>Scan QR codes for attendance on phone</li>
-            <li>Monitor present, absent, and hall occupancy in real time</li>
-            <li>Export attendance and exam reports</li>
-          </ul>
-        </div>
       </div>
     </div>
   );

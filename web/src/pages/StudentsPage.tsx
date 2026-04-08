@@ -47,10 +47,30 @@ function triggerBlobDownload(blob: Blob, filename: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 500);
 }
 
+function ensureSvgMarkupNamespaces(svgMarkup: string): string {
+  let normalized = svgMarkup.trim();
+
+  if (!/^<svg\b/i.test(normalized)) {
+    throw new Error('Generated QR SVG markup is invalid.');
+  }
+
+  if (!/\sxmlns=/.test(normalized)) {
+    normalized = normalized.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+  }
+
+  if (!/\sxmlns:xlink=/.test(normalized)) {
+    normalized = normalized.replace('<svg', '<svg xmlns:xlink="http://www.w3.org/1999/xlink"');
+  }
+
+  return normalized;
+}
+
 function buildQrSvgMarkup(qrCodeValue: string, size = 240): string {
-  return renderToStaticMarkup(
+  const svgMarkup = renderToStaticMarkup(
     <QRCodeSVG value={qrCodeValue} size={size} includeMargin level="M" />
   );
+
+  return ensureSvgMarkupNamespaces(svgMarkup);
 }
 
 function escapeHtml(value: string): string {
@@ -92,19 +112,18 @@ function buildStudentCardMarkup(student: Student, qrSize = 190): string {
 }
 
 async function svgMarkupToPngBlob(svgMarkup: string, size: number): Promise<Blob> {
-  const svgBlob = new Blob([svgMarkup], {
-    type: 'image/svg+xml;charset=utf-8'
+  const normalizedSvgMarkup = ensureSvgMarkupNamespaces(svgMarkup);
+  const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(normalizedSvgMarkup)}`;
+
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Unable to render QR image for download'));
+    img.src = svgUrl;
   });
 
-  const svgUrl = URL.createObjectURL(svgBlob);
-
   try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error('Unable to render QR image for download'));
-      img.src = svgUrl;
-    });
 
     const canvas = document.createElement('canvas');
     canvas.width = size;
@@ -131,7 +150,7 @@ async function svgMarkupToPngBlob(svgMarkup: string, size: number): Promise<Blob
 
     return pngBlob;
   } finally {
-    URL.revokeObjectURL(svgUrl);
+    // Data URLs do not need manual cleanup.
   }
 }
 

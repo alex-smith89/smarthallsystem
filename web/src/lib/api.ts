@@ -2,7 +2,6 @@ import type {
   ApiEnvelope,
   AttendanceByExamResponse,
   AttendanceRecord,
-  DashboardSummaryResponse,
   Exam,
   ExamReport,
   Hall,
@@ -23,6 +22,81 @@ type RequestOptions = {
   method?: RequestMethod;
   body?: unknown;
   token?: string | null;
+};
+
+export type DashboardHallRef =
+  | string
+  | {
+      _id?: string;
+      name: string;
+    };
+
+export type DashboardStudentRef =
+  | string
+  | {
+      _id?: string;
+    };
+
+export type DashboardExamOverview = {
+  _id: string;
+  title: string;
+  subjectCode: string;
+  examDate: string;
+  startTime: string;
+  endTime: string;
+  hallIds: DashboardHallRef[];
+  studentIds: DashboardStudentRef[];
+};
+
+export type DashboardHallOccupancy = {
+  examId: string;
+  title: string;
+  subjectCode: string;
+  allocated: number;
+  present: number;
+};
+
+export type DashboardStudentLogRef =
+  | string
+  | {
+      _id?: string;
+      fullName?: string;
+      rollNumber?: string;
+    };
+
+export type DashboardRecentLog = {
+  _id: string;
+  result: string;
+  message: string;
+  createdAt: string;
+  studentId: DashboardStudentLogRef;
+};
+
+export type DashboardCards = {
+  totalStudents: number;
+  activeStudents: number;
+  totalHalls: number;
+  totalExams: number;
+  todayExams: number;
+  todaySeatAllocations: number;
+  todayPresent: number;
+  scansToday: number;
+  attendanceRate: number;
+};
+
+export type DashboardScans = {
+  valid: number;
+  invalid: number;
+  duplicate: number;
+  manual: number;
+};
+
+export type DashboardSummaryData = {
+  cards: DashboardCards;
+  scans: DashboardScans;
+  todayExams: DashboardExamOverview[];
+  hallOccupancy: DashboardHallOccupancy[];
+  recentLogs: DashboardRecentLog[];
 };
 
 async function parseJsonSafe<T>(response: Response): Promise<T | null> {
@@ -162,6 +236,7 @@ export const api = {
     examDate: string;
     startTime: string;
     endTime: string;
+    durationMinutes: number;
     hallIds: string[];
     studentIds: string[];
   }) =>
@@ -178,6 +253,7 @@ export const api = {
       examDate: string;
       startTime: string;
       endTime: string;
+      durationMinutes: number;
       status: string;
       hallIds: string[];
       studentIds: string[];
@@ -224,7 +300,7 @@ export const api = {
     request<AttendanceByExamResponse>(`/attendance/exam/${examId}`),
 
   getDashboardSummary: async (examId?: string) =>
-    request<DashboardSummaryResponse>(
+    request<DashboardSummaryData>(
       `/dashboard/summary${examId ? `?examId=${encodeURIComponent(examId)}` : ''}`
     ),
 

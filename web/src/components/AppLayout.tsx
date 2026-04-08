@@ -11,75 +11,63 @@ const navItems = [
   {
     to: '/students',
     label: 'Students',
-    description: 'Student records and QR cards'
+    description: 'Manage student profiles'
   },
   {
     to: '/halls',
     label: 'Halls',
-    description: 'Hall setup and capacity'
+    description: 'Manage exam venues'
   },
   {
     to: '/exams',
     label: 'Exams',
-    description: 'Exam creation and setup'
+    description: 'Schedule exams and halls'
   },
   {
     to: '/allocations',
-    label: 'Allocations',
-    description: 'Seat generation and charts'
+    label: 'Seat Allocation',
+    description: 'Assign seats automatically'
   },
   {
     to: '/attendance',
-    label: 'Scanner',
-    description: 'QR attendance scanning'
+    label: 'Attendance Scanner',
+    description: 'Scan QR attendance'
   },
   {
     to: '/reports',
     label: 'Reports',
-    description: 'Exports and report views'
+    description: 'Export summaries and data'
   }
-];
+] as const;
 
 const pageMeta: Record<string, { title: string; subtitle: string }> = {
   '/': {
-    title: 'Dashboard',
-    subtitle:
-      'Monitor attendance, hall occupancy, scan warnings, and seating charts in real time.'
+    title: 'Smart Digital Exam Hall Management',
+    subtitle: 'Monitor attendance, seat allocation, and hall activity in real time.'
   },
   '/students': {
     title: 'Students',
-    subtitle:
-      'Manage students, preview QR codes, download QR files, and print QR attendance cards.'
+    subtitle: 'Maintain the student list, QR codes, and semester details.'
   },
   '/halls': {
     title: 'Halls',
-    subtitle:
-      'Configure halls, seating capacity, layout rows and columns, and seat prefixes.'
+    subtitle: 'Configure buildings, floors, and hall capacities for scheduling.'
   },
   '/exams': {
     title: 'Exams',
-    subtitle:
-      'Create exams, assign halls and students, and manage exam status.'
+    subtitle: 'Create exam schedules with halls, students, and time ranges.'
   },
   '/allocations': {
-    title: 'Seat Allocations',
-    subtitle:
-      'Generate automatic seating and print hall-wise seating charts.'
+    title: 'Seat Allocation',
+    subtitle: 'Generate clean seat plans automatically for each exam.'
   },
   '/attendance': {
     title: 'Attendance Scanner',
-    subtitle:
-      'Scan QR codes, upload QR images, handle duplicate or invalid scans, and mark manual attendance.'
-  },
-  '/scanner': {
-    title: 'Attendance Scanner',
-    subtitle:
-      'Use mobile-friendly QR scanning for fast exam hall attendance.'
+    subtitle: 'Use QR scan or manual marking and sync instantly to the dashboard.'
   },
   '/reports': {
     title: 'Reports',
-    subtitle:
-      'View attendance reports, hall occupancy, absent lists, warnings, and exports.'
+    subtitle: 'Review attendance insights, exports, and seat allocation summaries.'
   }
 };
 
@@ -87,92 +75,82 @@ export default function AppLayout() {
   const { user, logout } = useAuth();
   const location = useLocation();
 
-  const currentPage = useMemo(() => {
-    return pageMeta[location.pathname] ?? {
-      title: 'Smart Exam Hall & Attendance System',
-      subtitle:
-        'Manage exams, seating, attendance, monitoring, and reporting.'
-    };
+  const currentMeta = useMemo(() => {
+    if (pageMeta[location.pathname]) {
+      return pageMeta[location.pathname];
+    }
+
+    const matched = Object.entries(pageMeta).find(([path]) =>
+      path !== '/' && location.pathname.startsWith(path)
+    );
+
+    return matched?.[1] || pageMeta['/'];
   }, [location.pathname]);
+
+  const initials = useMemo(() => {
+    const name = user?.name?.trim() || 'Admin User';
+    return name
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() || '')
+      .join('');
+  }, [user?.name]);
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div>
           <div className="brand-card">
-            <h1>Smart Exam Hall</h1>
-            <p>Seat allocation, QR attendance, dashboard, and reports</p>
+            <div className="brand-badge">SE</div>
+            <div>
+              <p className="brand-eyebrow">Cyan Glass Theme</p>
+              <h1>Smart Exam System</h1>
+            </div>
           </div>
 
-          <nav className="sidebar-nav">
+          <nav className="nav-list">
             {navItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 end={item.to === '/'}
                 className={({ isActive }) =>
-                  isActive ? 'sidebar-link sidebar-link-active' : 'sidebar-link'
+                  isActive ? 'nav-link nav-link-active' : 'nav-link'
                 }
               >
-                <div style={{ fontWeight: 700 }}>{item.label}</div>
-                <div style={{ fontSize: '0.84rem', opacity: 0.9 }}>
-                  {item.description}
-                </div>
+                <span className="nav-link-label">{item.label}</span>
+                <span className="nav-link-description">{item.description}</span>
               </NavLink>
             ))}
           </nav>
         </div>
 
         <div className="sidebar-footer">
-          <div className="user-badge">
-            <strong>{user?.name || 'User'}</strong>
-            <span>{user?.role || 'unknown role'}</span>
-            <span>{user?.email || ''}</span>
+          <div className="user-chip glass-panel">
+            <div className="user-avatar">{initials || 'AU'}</div>
+            <div>
+              <strong>{user?.name || 'Admin User'}</strong>
+              <p>{user?.role || 'Administrator'}</p>
+            </div>
           </div>
-
-          <button
-            type="button"
-            className="btn btn-secondary full-width"
-            onClick={logout}
-          >
+          <button className="secondary-button full-width" onClick={logout}>
             Logout
           </button>
         </div>
       </aside>
 
       <main className="page-shell">
-        <header className="page-header">
-          <div className="card">
-            <div
-              className="card-header-row page-header-top"
-              style={{ marginBottom: 0 }}
-            >
-              <div>
-                <h2 style={{ marginBottom: '8px' }}>{currentPage.title}</h2>
-                <p>{currentPage.subtitle}</p>
-              </div>
-
-              <div className="page-header-user-block">
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontWeight: 700 }}>{user?.name || 'User'}</div>
-                  <div
-                    style={{
-                      color: '#64748b',
-                      textTransform: 'capitalize'
-                    }}
-                  >
-                    {user?.role || 'user'}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  className="btn btn-secondary header-logout-btn"
-                  onClick={logout}
-                >
-                  Logout
-                </button>
-              </div>
+        <header className="page-header glass-panel">
+          <div>
+            <p className="section-eyebrow">Dashboard Workspace</p>
+            <h2>{currentMeta.title}</h2>
+            <p>{currentMeta.subtitle}</p>
+          </div>
+          <div className="header-status">
+            <span className="status-dot" />
+            <div>
+              <strong>System online</strong>
+              <p>Live dashboard and QR attendance are active.</p>
             </div>
           </div>
         </header>

@@ -127,6 +127,21 @@ export const scanAttendance = asyncHandler(async (req: Request, res: Response) =
     throw new Error('Invalid QR code');
   }
 
+  if (parsed.examId && parsed.examId !== examId) {
+    await ScanLog.create({
+      examId,
+      qrCodeValue,
+      result: 'invalid',
+      message: 'QR belongs to a different exam',
+      scannedBy: req.user._id
+    });
+
+    getIO().emit('dashboard:updated', { examId, type: 'invalid-scan' });
+
+    res.status(400);
+    throw new Error('This QR code belongs to a different exam');
+  }
+
   const student = await Student.findById(parsed.studentId);
 
   if (!student) {

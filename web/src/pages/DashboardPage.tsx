@@ -14,430 +14,369 @@ import {
 } from 'recharts';
 import LoadingScreen from '../components/LoadingScreen';
 import StatCard from '../components/StatCard';
-import { api, formatDateTime, getErrorMessage } from '../lib/api';
-import { getSocket } from '../lib/socket';
-import type { DashboardSummaryResponse, Exam } from '../types';
+import {
+  api,
+  getErrorMessage,
+  type DashboardExamOverview,
+  type DashboardHallOccupancy,
+  type DashboardHallRef,
+  type DashboardRecentLog,
+  type DashboardSummaryData
+} from '../lib/api';
+import { connectSocket, disconnectSocket } from '../lib/socket';
 
-const PIE_COLORS = ['#2563eb', '#16a34a', '#f59e0b'];
+type ScanChartItem = {
+  name: string;
+  value: number;
+};
+
+type HallChartItem = {
+  name: string;
+  allocated: number;
+  present: number;
+};
+
+const pieColors = ['#36e4ff', '#7af6ff', '#41cfff', '#1596c2'];
 
 export default function DashboardPage() {
-  const [exams, setExams] = useState<Exam[]>([]);
-  const [selectedExamId, setSelectedExamId] = useState('');
-  const [summary, setSummary] = useState<DashboardSummaryResponse | null>(null);
+  const [dashboard, setDashboard] = useState<DashboardSummaryData | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [loading, setLoading] = useState(true);
-  const [panelLoading, setPanelLoading] = useState(false);
-
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-
-  async function loadExams() {
-    const response = await api.getExams();
-    setExams(response.data);
-
-    if (!selectedExamId && response.data.length > 0) {
-      setSelectedExamId(response.data[0]._id);
+  async function loadDashboard(showLoader = false): Promise<void> {
+    if (showLoader) {
+      setLoading(true);
     }
-  }
-
-  async function loadSummary(examId?: string, silent = false) {
-    if (!silent) {
-      if (loading) {
-        setLoading(true);
-      } else {
-        setPanelLoading(true);
-      }
-    }
-
-    setError('');
 
     try {
-      const response = await api.getDashboardSummary(examId || undefined);
-      setSummary(response.data);
+      const response = await api.getDashboardSummary();
+      setDashboard(response.data);
+      setError(null);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
-      if (!silent) {
-        setLoading(false);
-        setPanelLoading(false);
-      }
+      setLoading(false);
     }
   }
 
   useEffect(() => {
-    async function init() {
-      try {
-        await loadExams();
-        await loadSummary();
-      } catch (err) {
-        setError(getErrorMessage(err));
-        setLoading(false);
-      }
-    }
+    void loadDashboard(true);
 
-    void init();
-  }, []);
-
-  useEffect(() => {
-    void loadSummary(selectedExamId || undefined);
-  }, [selectedExamId]);
-
-  useEffect(() => {
-    const socket = getSocket();
-
-    if (selectedExamId) {
-      socket.emit('dashboard:join', selectedExamId);
-    }
-
-    const handler = (payload?: { examId?: string; type?: string }) => {
-      if (!selectedExamId || !payload?.examId || payload.examId === selectedExamId) {
-        setMessage('Dashboard updated live.');
-        void loadSummary(selectedExamId || undefined, true);
-
-        window.setTimeout(() => {
-          setMessage('');
-        }, 1500);
-      }
+    const socket = connectSocket();
+    const refresh = () => {
+      void loadDashboard(false);
     };
 
-    socket.on('dashboard:updated', handler);
+    socket.on('dashboard:updated', refresh);
 
     return () => {
-      socket.off('dashboard:updated', handler);
+      socket.off('dashboard:updated', refresh);
+      disconnectSocket();
     };
-  }, [selectedExamId]);
+  }, []);
 
-  const attendanceChartData = useMemo(() => {
-    if (!summary?.summary) return [];
-
-    return [
-      { name: 'Present', value: summary.summary.present },
-      { name: 'Absent', value: summary.summary.absent },
-      {
-        name: 'Pending',
-        value: Math.max(summary.summary.assigned - summary.summary.present - summary.summary.absent, 0)
-      }
-    ];
-  }, [summary]);
-
-  const scanStatsChartData = useMemo(() => {
-    if (!summary?.scanStats) return [];
+  const scanChartData = useMemo<ScanChartItem[]>(() => {
+    if (!dashboard) return [];
 
     return [
-      { name: 'Valid', value: summary.scanStats.valid },
-      { name: 'Duplicate', value: summary.scanStats.duplicate },
-      { name: 'Invalid', value: summary.scanStats.invalid },
-      { name: 'Manual', value: summary.scanStats.manual }
+      { name: 'Valid', value: dashboard.scans.valid || 0 },
+      { name: 'Invalid', value: dashboard.scans.invalid || 0 },
+      { name: 'Duplicate', value: dashboard.scans.duplicate || 0 },
+      { name: 'Manual', value: dashboard.scans.manual || 0 }
     ];
-  }, [summary]);
+  }, [dashboard]);
 
-  const topWarnings = useMemo(() => {
-    return (summary?.warnings ?? []).slice(0, 10);
-  }, [summary]);
+  const hallChartData = useMemo<HallChartItem[]>(() => {
+    if (!dashboard) return [];
+
+    return dashboard.hallOccupancy.map((item: DashboardHallOccupancy) => ({
+      name: item.subjectCode,
+      allocated: item.allocated,
+      present: item.present
+    }));
+  }, [dashboard]);
+
+  const todaysExamCount = dashboard?.todayExams.length || 0;
+  const liveStatusText =
+    todaysExamCount > 0
+      ? `${todaysExamCount} active exam${todaysExamCount > 1 ? 's' : ''} today`
+      : 'No exams scheduled today';
 
   if (loading) {
-    return <LoadingScreen text="Loading dashboard..." />;
+    return <LoadingScreen text="Loading dashboard summary..." />;
+  }
+
+  if (error) {
+    return (
+      <div className="stack-lg">
+        <div className="alert alert-error">{error}</div>
+        <button
+          type="button"
+          className="primary-button"
+          onClick={() => {
+            void loadDashboard(true);
+          }}
+        >
+          Retry dashboard
+        </button>
+      </div>
+    );
+  }
+
+  if (!dashboard) {
+    return <div className="alert alert-warning">No dashboard data found.</div>;
   }
 
   return (
-    <div className="page-stack">
-      <div className="card">
-        <div className="card-header-row">
-          <div>
-            <h3>Real-Time Dashboard</h3>
-            <p>
-              Monitor total assigned students, present and absent count, hall occupancy,
-              attendance progress, seating charts, and duplicate or invalid scan warnings.
-            </p>
+    <div className="stack-xl">
+      <section className="hero-panel glass-panel">
+        <div>
+          <span className="section-eyebrow">Live overview</span>
+          <h2>Exam operations dashboard</h2>
+          <p>
+            View today&apos;s attendance flow, monitor hall occupancy, and track QR scanning
+            performance in one place.
+          </p>
+        </div>
+
+        <div className="hero-metrics">
+          <div className="hero-metric-card">
+            <span className="hero-metric-label">System status</span>
+            <strong>Online</strong>
+            <small>{liveStatusText}</small>
           </div>
 
-          <div className="inline-filter">
-            <label className="form-field">
-              <span>Select Exam</span>
-              <select
-                value={selectedExamId}
-                onChange={(event) => setSelectedExamId(event.target.value)}
-              >
-                <option value="">All exams summary</option>
-                {exams.map((exam) => (
-                  <option key={exam._id} value={exam._id}>
-                    {exam.subjectCode} - {exam.title}
-                  </option>
-                ))}
-              </select>
-            </label>
+          <div className="hero-metric-card">
+            <span className="hero-metric-label">Attendance rate</span>
+            <strong>{dashboard.cards.attendanceRate}%</strong>
+            <small>Based on today&apos;s present vs seat allocations</small>
+          </div>
+        </div>
+      </section>
+
+      <section className="stats-grid">
+        <StatCard
+          label="Total Students"
+          value={dashboard.cards.totalStudents}
+          helper={`${dashboard.cards.activeStudents} active students`}
+          tone="primary"
+        />
+
+        <StatCard
+          label="Total Halls"
+          value={dashboard.cards.totalHalls}
+          helper="Configured halls ready for scheduling"
+        />
+
+        <StatCard
+          label="Total Exams"
+          value={dashboard.cards.totalExams}
+          helper={`${dashboard.cards.todayExams} exam(s) today`}
+          tone="success"
+        />
+
+        <StatCard
+          label="Seat Allocations Today"
+          value={dashboard.cards.todaySeatAllocations}
+          helper="Students assigned seats for today"
+          tone="warning"
+        />
+
+        <StatCard
+          label="Present Today"
+          value={dashboard.cards.todayPresent}
+          helper={`Scans today: ${dashboard.cards.scansToday}`}
+          tone="success"
+        />
+
+        <StatCard
+          label="Attendance Rate"
+          value={`${dashboard.cards.attendanceRate}%`}
+          helper="Calculated from allocated vs present"
+          tone="primary"
+        />
+      </section>
+
+      <section className="dashboard-grid-two">
+        <div className="glass-panel chart-panel">
+          <div className="panel-header-row">
+            <div>
+              <span className="section-eyebrow">QR scan insights</span>
+              <h3>Scan breakdown</h3>
+            </div>
+          </div>
+
+          <div className="chart-wrapper large-chart">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={scanChartData}
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius={65}
+                  outerRadius={105}
+                  paddingAngle={3}
+                >
+                  {scanChartData.map((entry: ScanChartItem, index: number) => (
+                    <Cell key={entry.name} fill={pieColors[index % pieColors.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="metric-chip-row">
+            <span className="metric-chip">Valid: {dashboard.scans.valid}</span>
+            <span className="metric-chip">Invalid: {dashboard.scans.invalid}</span>
+            <span className="metric-chip">Duplicate: {dashboard.scans.duplicate}</span>
+            <span className="metric-chip">Manual: {dashboard.scans.manual}</span>
           </div>
         </div>
 
-        {message ? <div className="alert alert-success">{message}</div> : null}
-        {error ? <div className="alert alert-error">{error}</div> : null}
-        {panelLoading ? <div className="alert alert-info">Refreshing dashboard...</div> : null}
-
-        {!selectedExamId && summary ? (
-          <div className="stats-grid">
-            <StatCard label="Total Exams" value={summary.examCount ?? 0} />
-            <StatCard label="Total Allocations" value={summary.allocationCount ?? 0} />
-            <StatCard label="Attendance Records" value={summary.attendanceCount ?? 0} />
-            <StatCard label="Warning Logs" value={summary.warningCount ?? 0} />
-          </div>
-        ) : null}
-
-        {selectedExamId && summary?.summary ? (
-          <div className="stats-grid">
-            <StatCard label="Assigned Students" value={summary.summary.assigned} />
-            <StatCard label="Present" value={summary.summary.present} />
-            <StatCard label="Absent" value={summary.summary.absent} />
-            <StatCard label="Attendance Progress" value={`${summary.summary.progress}%`} />
-          </div>
-        ) : null}
-      </div>
-
-      {selectedExamId && summary?.exam && summary?.summary ? (
-        <>
-          <div className="card">
-            <div className="card-header-row">
-              <div>
-                <h3>Selected Exam Overview</h3>
-                <p>Live details for the selected exam session.</p>
-              </div>
-
-              <span className={`pill pill-${summary.exam.status}`}>
-                {summary.exam.status}
-              </span>
-            </div>
-
-            <div className="details-grid">
-              <div><strong>Subject Code:</strong> {summary.exam.subjectCode}</div>
-              <div><strong>Exam Title:</strong> {summary.exam.title}</div>
-              <div><strong>Exam Date:</strong> {summary.exam.examDate}</div>
-              <div><strong>Start Time:</strong> {summary.exam.startTime}</div>
-              <div><strong>End Time:</strong> {summary.exam.endTime}</div>
-              <div><strong>Status:</strong> {summary.exam.status}</div>
+        <div className="glass-panel chart-panel">
+          <div className="panel-header-row">
+            <div>
+              <span className="section-eyebrow">Hall performance</span>
+              <h3>Seat allocation vs present count</h3>
             </div>
           </div>
 
-          {summary.scanStats ? (
-            <div className="stats-grid">
-              <StatCard label="Valid Scans" value={summary.scanStats.valid} />
-              <StatCard label="Duplicate Scans" value={summary.scanStats.duplicate} />
-              <StatCard label="Invalid Scans" value={summary.scanStats.invalid} />
-              <StatCard label="Manual Marks" value={summary.scanStats.manual} />
-            </div>
-          ) : null}
+          <div className="chart-wrapper large-chart">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={hallChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+                <XAxis dataKey="name" stroke="#a9d8e6" />
+                <YAxis stroke="#a9d8e6" />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="allocated" fill="#36e4ff" radius={[10, 10, 0, 0]} />
+                <Bar dataKey="present" fill="#7af6ff" radius={[10, 10, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </section>
 
-          <div className="charts-grid">
-            <div className="card chart-card">
-              <h3>Attendance Summary</h3>
-              <div className="chart-area">
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={attendanceChartData}
-                      dataKey="value"
-                      nameKey="name"
-                      outerRadius={95}
-                      label
-                    >
-                      {attendanceChartData.map((_, index) => (
-                        <Cell
-                          key={index}
-                          fill={PIE_COLORS[index % PIE_COLORS.length]}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="card chart-card">
-              <h3>Hall Occupancy</h3>
-              <div className="chart-area">
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={summary.hallOccupancy ?? []}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="hallName" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="assigned" fill="#2563eb" name="Assigned" />
-                    <Bar dataKey="present" fill="#16a34a" name="Present" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+      <section className="dashboard-grid-two">
+        <div className="glass-panel panel-section">
+          <div className="panel-header-row">
+            <div>
+              <span className="section-eyebrow">Today&apos;s exams</span>
+              <h3>Scheduled exam sessions</h3>
             </div>
           </div>
 
-          <div className="charts-grid">
-            <div className="card chart-card">
-              <h3>Scan Statistics</h3>
-              <div className="chart-area">
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={scanStatsChartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="value" fill="#2563eb" name="Count" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+          {dashboard.todayExams.length > 0 ? (
+            <div className="stack-md">
+              {dashboard.todayExams.map((exam: DashboardExamOverview) => (
+                <ExamCard key={exam._id} exam={exam} />
+              ))}
             </div>
+          ) : (
+            <div className="empty-state compact-empty-state">
+              <h4>No exams today</h4>
+              <p>Add an exam schedule to start tracking attendance and hall occupancy.</p>
+            </div>
+          )}
+        </div>
 
-            <div className="card">
-              <h3>Quick Dashboard Notes</h3>
-              <div className="form-grid">
-                <div>
-                  <strong>Total Assigned:</strong> {summary.summary.assigned}
-                </div>
-                <div>
-                  <strong>Total Present:</strong> {summary.summary.present}
-                </div>
-                <div>
-                  <strong>Total Absent:</strong> {summary.summary.absent}
-                </div>
-                <div>
-                  <strong>Attendance Progress:</strong> {summary.summary.progress}%
-                </div>
-                <div>
-                  <strong>Duplicate Scans:</strong> {summary.scanStats?.duplicate ?? 0}
-                </div>
-                <div>
-                  <strong>Invalid Scans:</strong> {summary.scanStats?.invalid ?? 0}
-                </div>
-              </div>
+        <div className="glass-panel panel-section">
+          <div className="panel-header-row">
+            <div>
+              <span className="section-eyebrow">Recent scan activity</span>
+              <h3>Latest attendance logs</h3>
             </div>
           </div>
 
-          <div className="card">
-            <h3>Hall Occupancy Details</h3>
-            <div className="responsive-table">
+          {dashboard.recentLogs.length > 0 ? (
+            <div className="table-shell logs-table-shell">
               <table>
                 <thead>
                   <tr>
-                    <th>Hall</th>
-                    <th>Capacity</th>
-                    <th>Assigned</th>
-                    <th>Present</th>
-                    <th>Vacant</th>
-                    <th>Occupancy %</th>
+                    <th>Student</th>
+                    <th>Result</th>
+                    <th>Message</th>
+                    <th>Time</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(summary.hallOccupancy ?? []).map((hall) => (
-                    <tr key={hall.hallId}>
-                      <td>{hall.hallName}</td>
-                      <td>{hall.capacity}</td>
-                      <td>{hall.assigned}</td>
-                      <td>{hall.present}</td>
-                      <td>{hall.vacant}</td>
-                      <td>{hall.occupancyPercent}%</td>
-                    </tr>
-                  ))}
+                  {dashboard.recentLogs.map((log: DashboardRecentLog) => {
+                    const student =
+                      typeof log.studentId === 'object' && log.studentId !== null
+                        ? log.studentId
+                        : null;
+
+                    return (
+                      <tr key={log._id}>
+                        <td>
+                          <div className="table-primary-cell">
+                            <strong>{student?.fullName || 'Unknown Student'}</strong>
+                            <span>{student?.rollNumber || 'N/A'}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <span className={`pill pill-${log.result}`}>{log.result}</span>
+                        </td>
+                        <td>{log.message}</td>
+                        <td>{new Date(log.createdAt).toLocaleString()}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
-          </div>
-
-          <div className="card">
-            <h3>Recent Attendance Activity</h3>
-            {(summary.recentAttendance ?? []).length > 0 ? (
-              <div className="responsive-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Student</th>
-                      <th>Roll Number</th>
-                      <th>Hall</th>
-                      <th>Method</th>
-                      <th>Scanned By</th>
-                      <th>Scanned At</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(summary.recentAttendance ?? []).map((item) => (
-                      <tr key={item.id}>
-                        <td>{item.studentName}</td>
-                        <td>{item.rollNumber}</td>
-                        <td>{item.hallName}</td>
-                        <td>
-                          <span className="pill pill-completed">{item.scanMethod}</span>
-                        </td>
-                        <td>{item.scannedBy}</td>
-                        <td>{formatDateTime(item.scannedAt)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="empty-state">No attendance activity recorded yet.</div>
-            )}
-          </div>
-
-          <div className="card">
-            <h3>Warnings and Scan Issues</h3>
-            {topWarnings.length > 0 ? (
-              <div className="log-list">
-                {topWarnings.map((warning) => (
-                  <article
-                    key={warning.id}
-                    className={`log-card ${
-                      warning.result === 'duplicate' ? 'log-warning' : 'log-error'
-                    }`}
-                  >
-                    <div className="log-top">
-                      <strong>{warning.message}</strong>
-                      <span>{formatDateTime(warning.createdAt)}</span>
-                    </div>
-
-                    <div><strong>Result:</strong> {warning.result}</div>
-                    <div><strong>Student:</strong> {warning.student?.fullName ?? '-'}</div>
-                    <div><strong>Roll Number:</strong> {warning.student?.rollNumber ?? '-'}</div>
-                    <div><strong>QR Value:</strong> <code>{warning.qrCodeValue}</code></div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-state">No duplicate or invalid scan warnings.</div>
-            )}
-          </div>
-
-          <div className="card">
-            <h3>Digital Seating Chart Preview</h3>
-            {(summary.seatingCharts ?? []).length > 0 ? (
-              <div className="report-grid">
-                {(summary.seatingCharts ?? []).map((hall) => (
-                  <div key={hall.hallId} className="seat-map-card">
-                    <h4>{hall.hallName}</h4>
-
-                    <div className="seat-grid">
-                      {hall.seats.map((seat) => (
-                        <div
-                          key={`${hall.hallId}-${seat.seatNumber}`}
-                          className={`seat-chip ${
-                            seat.present ? 'seat-chip-present' : 'seat-chip-absent'
-                          }`}
-                        >
-                          <strong>{seat.seatNumber}</strong>
-                          <span>{seat.rollNumber}</span>
-                          <small>{seat.studentName}</small>
-                          <small>{seat.present ? 'PRESENT' : 'ABSENT'}</small>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-state">No seating chart data available yet.</div>
-            )}
-          </div>
-        </>
-      ) : null}
+          ) : (
+            <div className="empty-state compact-empty-state">
+              <h4>No scan logs yet</h4>
+              <p>Attendance scan activity will appear here when QR or manual scans begin.</p>
+            </div>
+          )}
+        </div>
+      </section>
     </div>
+  );
+}
+
+type ExamCardProps = {
+  exam: DashboardExamOverview;
+};
+
+function ExamCard({ exam }: ExamCardProps) {
+  const hallNames = exam.hallIds
+    .map((hall: DashboardHallRef) =>
+      typeof hall === 'object' && hall !== null ? hall.name : 'Hall'
+    )
+    .join(', ');
+
+  return (
+    <article className="exam-overview-card glass-subpanel">
+      <div className="exam-overview-top">
+        <div>
+          <p className="exam-subject-code">{exam.subjectCode}</p>
+          <h4>{exam.title}</h4>
+        </div>
+        <span className="pill pill-scheduled">Scheduled</span>
+      </div>
+
+      <div className="exam-overview-meta">
+        <span>{exam.examDate}</span>
+        <span>
+          {exam.startTime} - {exam.endTime}
+        </span>
+      </div>
+
+      <div className="exam-overview-footer">
+        <div>
+          <small>Assigned halls</small>
+          <strong>{hallNames || 'No halls assigned'}</strong>
+        </div>
+        <div>
+          <small>Students</small>
+          <strong>{exam.studentIds.length}</strong>
+        </div>
+      </div>
+    </article>
   );
 }

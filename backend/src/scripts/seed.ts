@@ -105,6 +105,7 @@ async function seed() {
     examDate: '2026-04-15',
     startTime: '10:00',
     endTime: '13:00',
+    durationMinutes: 180,
     status: 'scheduled',
     hallIds: halls.map((hall) => hall._id),
     studentIds: students.map((student) => student._id),

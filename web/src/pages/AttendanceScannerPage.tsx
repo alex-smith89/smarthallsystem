@@ -40,6 +40,131 @@ const initialScanResult: ScanResultState = {
   message: ''
 };
 
+function ensureSvgMarkupNamespaces(svgMarkup: string): string {
+  let normalized = svgMarkup.trim();
+
+  if (!/^<svg\b/i.test(normalized)) {
+    throw new Error('Could not read SVG file.');
+  }
+
+  if (!/\sxmlns=/.test(normalized)) {
+    normalized = normalized.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+  }
+
+  if (!/\sxmlns:xlink=/.test(normalized)) {
+    normalized = normalized.replace('<svg', '<svg xmlns:xlink="http://www.w3.org/1999/xlink"');
+  }
+
+  return normalized;
+}
+
+function loadImageElement(src: string, errorMessage: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.decoding = 'async';
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error(errorMessage));
+    image.src = src;
+  });
+}
+
+async function normalizeImageFileForScanning(file: File): Promise<File> {
+  const isSvg = file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
+  const sourceUrl = isSvg
+    ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(ensureSvgMarkupNamespaces(await file.text()))}`
+    : URL.createObjectURL(file);
+
+  try {
+    const image = await loadImageElement(
+      sourceUrl,
+      isSvg ? 'Could not load SVG image.' : 'Could not load image file.'
+    );
+
+    const intrinsicWidth = image.naturalWidth || image.width || 1024;
+    const intrinsicHeight = image.naturalHeight || image.height || 1024;
+    const safeWidth = Math.max(intrinsicWidth, 1);
+    const safeHeight = Math.max(intrinsicHeight, 1);
+    const padding = 64;
+    const longestSide = Math.max(safeWidth, safeHeight);
+    const canvasSize = Math.max(1024, Math.min(2400, longestSide + padding * 2));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = canvasSize;
+    canvas.height = canvasSize;
+
+    const context = canvas.getContext('2d');
+    if (!context) {
+      throw new Error('Canvas is not supported in this browser.');
+    }
+
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvasSize, canvasSize);
+    context.imageSmoothingEnabled = false;
+
+    const drawableSize = canvasSize - padding * 2;
+    const scale = Math.min(drawableSize / safeWidth, drawableSize / safeHeight);
+    const drawWidth = safeWidth * scale;
+    const drawHeight = safeHeight * scale;
+    const offsetX = (canvasSize - drawWidth) / 2;
+    const offsetY = (canvasSize - drawHeight) / 2;
+
+    context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+
+    const pngBlob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error('Could not prepare QR image for scanning.'));
+        }
+      }, 'image/png');
+    });
+
+    const outputName = file.name.replace(/\.(svg|png|jpe?g|webp)$/i, '') || 'uploaded-qr';
+
+    return new File([pngBlob], `${outputName}.png`, {
+      type: 'image/png'
+    });
+  } finally {
+    if (!isSvg) {
+      URL.revokeObjectURL(sourceUrl);
+    }
+  }
+}
+
+async function getPreferredCamera(): Promise<string | { facingMode: 'environment' }> {
+  const cameras = await Html5Qrcode.getCameras().catch(() => []);
+  const mobileLike = /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent);
+
+  if (cameras.length === 0) {
+    if (typeof navigator.mediaDevices?.getUserMedia === 'function') {
+      return { facingMode: 'environment' };
+    }
+
+    throw new Error('No camera device was found. Upload QR image instead.');
+  }
+
+  const backCamera = cameras.find((camera) => /back|rear|environment/i.test(camera.label));
+
+  if (backCamera) {
+    return backCamera.id;
+  }
+
+  if (mobileLike) {
+    return { facingMode: 'environment' };
+  }
+
+  return cameras[0].id;
+}
+
+function resetScannerContainer(): void {
+  const scannerElement = document.getElementById('scan-reader');
+
+  if (scannerElement) {
+    scannerElement.innerHTML = '';
+  }
+}
+
 export default function AttendanceScannerPage() {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const processingRef = useRef(false);
@@ -330,26 +455,50 @@ export default function AttendanceScannerPage() {
 
     try {
       await stopScanner();
+      resetScannerContainer();
 
       const scanner = new Html5Qrcode('scan-reader');
       scannerRef.current = scanner;
 
-      await scanner.start(
-        { facingMode: 'environment' },
-        {
-          fps: 10,
-          qrbox: { width: 260, height: 260 }
-        },
-        (decodedText) => void processDecodedQrValue(decodedText, 'camera'),
-        () => {
-          // ignore frame scan errors
+      const cameraToUse = await getPreferredCamera();
+      const startConfig = {
+        fps: 10,
+        qrbox: { width: 260, height: 260 }
+      };
+
+      try {
+        await scanner.start(
+          cameraToUse,
+          startConfig,
+          (decodedText) => void processDecodedQrValue(decodedText, 'camera'),
+          () => {
+            // ignore frame scan errors
+          }
+        );
+      } catch (primaryError) {
+        const availableCameras = await Html5Qrcode.getCameras().catch(() => []);
+        const fallbackCameraId = availableCameras[0]?.id;
+
+        if (!fallbackCameraId || (typeof cameraToUse === 'string' && cameraToUse === fallbackCameraId)) {
+          throw primaryError;
         }
-      );
+
+        await scanner.start(
+          fallbackCameraId,
+          startConfig,
+          (decodedText) => void processDecodedQrValue(decodedText, 'camera'),
+          () => {
+            // ignore frame scan errors
+          }
+        );
+      }
 
       setScannerActive(true);
+      setMessage('Scanner started successfully.');
     } catch (err) {
       setError(getErrorMessage(err));
       setScannerActive(false);
+      resetScannerContainer();
     } finally {
       setStartingScanner(false);
     }
@@ -372,64 +521,8 @@ export default function AttendanceScannerPage() {
       scannerRef.current = null;
     }
 
+    resetScannerContainer();
     setScannerActive(false);
-  }
-
-  async function convertSvgFileToPngFile(file: File): Promise<File> {
-    const svgText = await file.text();
-    const svgBlob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
-    const svgUrl = URL.createObjectURL(svgBlob);
-
-    try {
-      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error('Could not load SVG image.'));
-        img.src = svgUrl;
-      });
-
-      const intrinsicWidth = image.naturalWidth || image.width || 1024;
-      const intrinsicHeight = image.naturalHeight || image.height || 1024;
-      const size = Math.max(intrinsicWidth, intrinsicHeight, 1024);
-
-      const canvas = document.createElement('canvas');
-      canvas.width = size;
-      canvas.height = size;
-
-      const context = canvas.getContext('2d');
-      if (!context) {
-        throw new Error('Canvas is not supported in this browser.');
-      }
-
-      context.fillStyle = '#ffffff';
-      context.fillRect(0, 0, size, size);
-
-      const scale = Math.min(size / intrinsicWidth, size / intrinsicHeight);
-      const drawWidth = intrinsicWidth * scale;
-      const drawHeight = intrinsicHeight * scale;
-      const offsetX = (size - drawWidth) / 2;
-      const offsetY = (size - drawHeight) / 2;
-
-      context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
-
-      const pngBlob = await new Promise<Blob>((resolve, reject) => {
-        canvas.toBlob((blob) => {
-          if (blob) {
-            resolve(blob);
-          } else {
-            reject(new Error('Could not convert SVG to PNG.'));
-          }
-        }, 'image/png');
-      });
-
-      const pngName = file.name.replace(/\.svg$/i, '.png');
-
-      return new File([pngBlob], pngName, {
-        type: 'image/png'
-      });
-    } finally {
-      URL.revokeObjectURL(svgUrl);
-    }
   }
 
   async function scanQrFromUploadedFile(file: File): Promise<string> {
@@ -480,14 +573,15 @@ export default function AttendanceScannerPage() {
         await stopScanner();
       }
 
-      let fileToScan = originalFile;
+      const fileToScan = await normalizeImageFileForScanning(originalFile);
       const isSvg =
         originalFile.type === 'image/svg+xml' || /\.svg$/i.test(originalFile.name);
 
-      if (isSvg) {
-        fileToScan = await convertSvgFileToPngFile(originalFile);
-        setMessage('SVG converted to PNG for better QR scanning.');
-      }
+      setMessage(
+        isSvg
+          ? 'SVG converted to PNG for better QR scanning.'
+          : 'Uploaded image prepared for reliable QR scanning.'
+      );
 
       const decodedText = await scanQrFromUploadedFile(fileToScan);
       await processDecodedQrValue(decodedText, 'upload');

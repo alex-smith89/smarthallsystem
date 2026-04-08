@@ -2,7 +2,32 @@ import { useEffect, useMemo, useState } from 'react';
 import LoadingScreen from '../components/LoadingScreen';
 import { useAuth } from '../contexts/AuthContext';
 import { api, getErrorMessage } from '../lib/api';
-import type { Exam, Hall, Student } from '../types';
+import type { Hall, Student } from '../types';
+
+type ExamStatus = 'scheduled' | 'active' | 'completed';
+
+type ExamHallRef = {
+  _id: string;
+  name: string;
+};
+
+type ExamStudentRef = {
+  _id: string;
+  fullName: string;
+};
+
+type ExamRecord = {
+  _id: string;
+  title: string;
+  subjectCode: string;
+  examDate: string;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  status: ExamStatus;
+  hallIds: ExamHallRef[];
+  studentIds: ExamStudentRef[];
+};
 
 type ExamFormState = {
   title: string;
@@ -10,7 +35,8 @@ type ExamFormState = {
   examDate: string;
   startTime: string;
   endTime: string;
-  status: 'scheduled' | 'active' | 'completed';
+  durationMinutes: number;
+  status: ExamStatus;
   hallIds: string[];
   studentIds: string[];
 };
@@ -21,6 +47,7 @@ const initialForm: ExamFormState = {
   examDate: '',
   startTime: '',
   endTime: '',
+  durationMinutes: 180,
   status: 'scheduled',
   hallIds: [],
   studentIds: []
@@ -35,7 +62,7 @@ function toggleSelection(items: string[], value: string): string[] {
 export default function ExamsPage() {
   const { user } = useAuth();
 
-  const [exams, setExams] = useState<Exam[]>([]);
+  const [exams, setExams] = useState<ExamRecord[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [halls, setHalls] = useState<Hall[]>([]);
 
@@ -45,15 +72,15 @@ export default function ExamsPage() {
   const [studentSearch, setStudentSearch] = useState('');
   const [hallSearch, setHallSearch] = useState('');
 
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [submitting, setSubmitting] = useState<boolean>(false);
 
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
   const canEdit = user?.role === 'admin';
 
-  async function loadAll() {
+  async function loadAll(): Promise<void> {
     setLoading(true);
     setError('');
 
@@ -64,7 +91,7 @@ export default function ExamsPage() {
         api.getHalls()
       ]);
 
-      setExams(examResponse.data);
+      setExams(examResponse.data as ExamRecord[]);
       setStudents(studentResponse.data.filter((student) => student.isActive));
       setHalls(hallResponse.data);
     } catch (err) {
@@ -78,7 +105,7 @@ export default function ExamsPage() {
     void loadAll();
   }, []);
 
-  function resetForm() {
+  function resetForm(): void {
     setForm(initialForm);
     setEditingId(null);
     setStudentSearch('');
@@ -127,7 +154,7 @@ export default function ExamsPage() {
 
   const selectedStudentCount = form.studentIds.length;
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (!canEdit) return;
 
@@ -136,11 +163,46 @@ export default function ExamsPage() {
     setMessage('');
 
     try {
+      if (form.durationMinutes < 1) {
+        throw new Error('Duration must be at least 1 minute.');
+      }
+
+      if (form.hallIds.length === 0) {
+        throw new Error('Please select at least one hall.');
+      }
+
+      if (form.studentIds.length === 0) {
+        throw new Error('Please select at least one student.');
+      }
+
+      if (totalSelectedHallCapacity < selectedStudentCount) {
+        throw new Error('Selected hall capacity is lower than selected student count.');
+      }
+
       if (editingId) {
-        await api.updateExam(editingId, form);
+        await api.updateExam(editingId, {
+          title: form.title,
+          subjectCode: form.subjectCode,
+          examDate: form.examDate,
+          startTime: form.startTime,
+          endTime: form.endTime,
+          durationMinutes: form.durationMinutes,
+          status: form.status,
+          hallIds: form.hallIds,
+          studentIds: form.studentIds
+        });
         setMessage('Exam updated successfully.');
       } else {
-        await api.createExam(form);
+        await api.createExam({
+          title: form.title,
+          subjectCode: form.subjectCode,
+          examDate: form.examDate,
+          startTime: form.startTime,
+          endTime: form.endTime,
+          durationMinutes: form.durationMinutes,
+          hallIds: form.hallIds,
+          studentIds: form.studentIds
+        });
         setMessage('Exam created successfully.');
       }
 
@@ -153,7 +215,7 @@ export default function ExamsPage() {
     }
   }
 
-  function handleEdit(exam: Exam) {
+  function handleEdit(exam: ExamRecord): void {
     setEditingId(exam._id);
     setForm({
       title: exam.title,
@@ -161,6 +223,7 @@ export default function ExamsPage() {
       examDate: exam.examDate,
       startTime: exam.startTime,
       endTime: exam.endTime,
+      durationMinutes: exam.durationMinutes,
       status: exam.status,
       hallIds: exam.hallIds.map((hall) => hall._id),
       studentIds: exam.studentIds.map((student) => student._id)
@@ -172,7 +235,7 @@ export default function ExamsPage() {
     });
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(id: string): Promise<void> {
     if (!canEdit) return;
 
     const confirmed = window.confirm('Delete this exam?');
@@ -187,23 +250,23 @@ export default function ExamsPage() {
     }
   }
 
-  function handleSelectAllFilteredStudents() {
+  function handleSelectAllFilteredStudents(): void {
     const filteredIds = filteredStudents.map((student) => student._id);
     const merged = Array.from(new Set([...form.studentIds, ...filteredIds]));
     setForm((prev) => ({ ...prev, studentIds: merged }));
   }
 
-  function handleClearStudents() {
+  function handleClearStudents(): void {
     setForm((prev) => ({ ...prev, studentIds: [] }));
   }
 
-  function handleSelectAllFilteredHalls() {
+  function handleSelectAllFilteredHalls(): void {
     const filteredIds = filteredHalls.map((hall) => hall._id);
     const merged = Array.from(new Set([...form.hallIds, ...filteredIds]));
     setForm((prev) => ({ ...prev, hallIds: merged }));
   }
 
-  function handleClearHalls() {
+  function handleClearHalls(): void {
     setForm((prev) => ({ ...prev, hallIds: [] }));
   }
 
@@ -274,7 +337,12 @@ export default function ExamsPage() {
               <span>Subject Code</span>
               <input
                 value={form.subjectCode}
-                onChange={(e) => setForm((prev) => ({ ...prev, subjectCode: e.target.value.toUpperCase() }))}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    subjectCode: e.target.value.toUpperCase()
+                  }))
+                }
                 placeholder="CSC401"
                 required
                 disabled={!canEdit}
@@ -299,7 +367,7 @@ export default function ExamsPage() {
                 onChange={(e) =>
                   setForm((prev) => ({
                     ...prev,
-                    status: e.target.value as ExamFormState['status']
+                    status: e.target.value as ExamStatus
                   }))
                 }
                 disabled={!canEdit}
@@ -327,6 +395,23 @@ export default function ExamsPage() {
                 type="time"
                 value={form.endTime}
                 onChange={(e) => setForm((prev) => ({ ...prev, endTime: e.target.value }))}
+                required
+                disabled={!canEdit}
+              />
+            </label>
+
+            <label className="form-field">
+              <span>Duration (minutes)</span>
+              <input
+                type="number"
+                min={1}
+                value={form.durationMinutes}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    durationMinutes: Number(e.target.value)
+                  }))
+                }
                 required
                 disabled={!canEdit}
               />
@@ -504,6 +589,7 @@ export default function ExamsPage() {
                 <th>Title</th>
                 <th>Date</th>
                 <th>Time</th>
+                <th>Duration</th>
                 <th>Status</th>
                 <th>Halls</th>
                 <th>Students</th>
@@ -520,6 +606,7 @@ export default function ExamsPage() {
                   <td>
                     {exam.startTime} - {exam.endTime}
                   </td>
+                  <td>{exam.durationMinutes} min</td>
                   <td>
                     <span className={`pill pill-${exam.status}`}>{exam.status}</span>
                   </td>
@@ -552,7 +639,7 @@ export default function ExamsPage() {
 
               {exams.length === 0 ? (
                 <tr>
-                  <td colSpan={canEdit ? 8 : 7}>
+                  <td colSpan={canEdit ? 9 : 8}>
                     <div className="empty-state">No exams created yet.</div>
                   </td>
                 </tr>

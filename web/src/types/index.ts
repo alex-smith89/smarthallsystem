@@ -42,6 +42,7 @@ export type Exam = {
   examDate: string;
   startTime: string;
   endTime: string;
+  durationMinutes: number;
   status: ExamStatus;
   hallIds: Hall[];
   studentIds: Student[];
@@ -99,70 +100,64 @@ export type ScanLog = {
 };
 
 export type DashboardSummaryResponse = {
-  exam?: {
+  cards: {
+    totalStudents: number;
+    activeStudents: number;
+    totalHalls: number;
+    totalExams: number;
+    todayExams: number;
+    todaySeatAllocations: number;
+    todayPresent: number;
+    scansToday: number;
+    attendanceRate: number;
+  };
+  scans: {
+    valid: number;
+    duplicate: number;
+    invalid: number;
+    manual: number;
+  };
+  todayExams: Array<{
     _id: string;
     title: string;
     subjectCode: string;
     examDate: string;
     startTime: string;
     endTime: string;
-    status: ExamStatus;
-  };
-  summary?: {
-    assigned: number;
+    hallIds: Array<
+      | string
+      | {
+          _id?: string;
+          name: string;
+        }
+    >;
+    studentIds: Array<
+      | string
+      | {
+          _id?: string;
+        }
+    >;
+  }>;
+  hallOccupancy: Array<{
+    examId: string;
+    title: string;
+    subjectCode: string;
+    allocated: number;
     present: number;
-    absent: number;
-    progress: number;
-  };
-  scanStats?: {
-    valid: number;
-    duplicate: number;
-    invalid: number;
-    manual: number;
-  };
-  hallOccupancy?: Array<{
-    hallId: string;
-    hallName: string;
-    capacity: number;
-    assigned: number;
-    present: number;
-    vacant: number;
-    occupancyPercent: number;
   }>;
-  seatingCharts?: Array<{
-    hallId: string;
-    hallName: string;
-    seats: Array<{
-      seatNumber: string;
-      row: number;
-      column: number;
-      studentName: string;
-      rollNumber: string;
-      present: boolean;
-    }>;
-  }>;
-  recentAttendance?: Array<{
-    id: string;
-    scannedAt: string;
-    scanMethod: AttendanceScanMethod;
-    studentName: string;
-    rollNumber: string;
-    hallName: string;
-    scannedBy: string;
-  }>;
-  warnings?: Array<{
-    id: string;
+  recentLogs: Array<{
+    _id: string;
     result: string;
     message: string;
-    qrCodeValue: string;
-    student?: Student;
     createdAt: string;
+    studentId:
+      | string
+      | {
+          _id?: string;
+          fullName?: string;
+          rollNumber?: string;
+        };
   }>;
-  examCount?: number;
-  allocationCount?: number;
-  attendanceCount?: number;
-  warningCount?: number;
-  message?: string;
 };
 
 export type AttendanceByExamResponse = {
@@ -198,6 +193,7 @@ export type ExamReport = {
     examDate: string;
     startTime: string;
     endTime: string;
+    durationMinutes: number;
     status: ExamStatus;
   };
   summary: {

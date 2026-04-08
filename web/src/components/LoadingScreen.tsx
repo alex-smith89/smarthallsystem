@@ -9,8 +9,8 @@ export default function LoadingScreen({
     <div className="center-screen">
       <div className="loader-card">
         <div className="loader-spinner" />
-        <h3 style={{ margin: '0 0 8px' }}>Please wait</h3>
-        <p style={{ margin: 0, color: '#64748b' }}>{text}</p>
+        <h3 className="loader-title">Please wait</h3>
+        <p className="loader-text">{text}</p>
       </div>
     </div>
   );

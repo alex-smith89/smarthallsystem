@@ -1,4 +1,4 @@
-import mongoose, { Schema, type InferSchemaType } from 'mongoose';
+import mongoose, { Schema, type InferSchemaType, type HydratedDocument, type Model } from 'mongoose';
 
 const examSchema = new Schema(
   {
@@ -15,20 +15,23 @@ const examSchema = new Schema(
     },
     examDate: {
       type: String,
-      required: true
+      required: true,
+      trim: true
     },
     startTime: {
       type: String,
-      required: true
+      required: true,
+      trim: true
     },
     endTime: {
       type: String,
-      required: true
+      required: true,
+      trim: true
     },
-    status: {
-      type: String,
-      enum: ['scheduled', 'active', 'completed'],
-      default: 'scheduled'
+    durationMinutes: {
+      type: Number,
+      required: true,
+      min: 1
     },
     hallIds: [
       {
@@ -44,10 +47,15 @@ const examSchema = new Schema(
         required: true
       }
     ],
+    status: {
+      type: String,
+      enum: ['scheduled', 'active', 'completed'],
+      default: 'scheduled'
+    },
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: true
+      required: false
     }
   },
   {
@@ -56,4 +64,9 @@ const examSchema = new Schema(
 );
 
 export type ExamType = InferSchemaType<typeof examSchema>;
-export const Exam = mongoose.model<ExamType>('Exam', examSchema);
+export type ExamDocument = HydratedDocument<ExamType>;
+export type ExamModel = Model<ExamType>;
+
+export const Exam =
+  (mongoose.models.Exam as ExamModel) ||
+  mongoose.model<ExamType>('Exam', examSchema);
