@@ -6,38 +6,56 @@ import { ScanLog } from '../models/ScanLog.js';
 import { SeatAllocation } from '../models/SeatAllocation.js';
 import { Student } from '../models/Student.js';
 import { Hall } from '../models/Hall.js';
+import {
+  getHistoricalAttendanceTrend,
+  getUpcomingHallForecast
+} from '../services/hallOccupancyForecast.service.js';
 
 export const getDashboardSummary = asyncHandler(async (_req: Request, res: Response) => {
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
 
-  const [
-    totalStudents,
-    activeStudents,
-    totalHalls,
-    totalExams,
-    todayExams,
-    todaySeatAllocations,
-    todayPresent,
-    recentLogs,
-    scanStatsRaw
-  ] = await Promise.all([
-    Student.countDocuments(),
-    Student.countDocuments({ isActive: true }),
-    Hall.countDocuments(),
-    Exam.countDocuments(),
-    Exam.find({ examDate: today }).sort({ startTime: 1 }),
-    SeatAllocation.countDocuments({ examDate: today }),
-    Attendance.countDocuments({ examDate: today }),
-    ScanLog.find().sort({ createdAt: -1 }).limit(8).populate('studentId', 'fullName rollNumber'),
-    ScanLog.aggregate([
-      {
-        $group: {
-          _id: '$result',
-          count: { $sum: 1 }
+  const [totalStudents, activeStudents, totalHalls, totalExams, todayExams, recentLogs, scanStatsRaw] =
+    await Promise.all([
+      Student.countDocuments(),
+      Student.countDocuments({ isActive: true }),
+      Hall.countDocuments(),
+      Exam.countDocuments(),
+      Exam.find({ examDate: today }).sort({ startTime: 1 }).populate('hallIds', 'name').lean(),
+      ScanLog.find().sort({ createdAt: -1 }).limit(8).populate('studentId', 'fullName rollNumber'),
+      ScanLog.aggregate([
+        {
+          $group: {
+            _id: '$result',
+            count: { $sum: 1 }
+          }
         }
-      }
-    ])
+      ])
+    ]);
+
+  const todayExamIds = todayExams.map((exam) => exam._id);
+
+  const [todaySeatAllocations, todayPresent, hallOccupancy, trend, hallForecast] = await Promise.all([
+    todayExamIds.length ? SeatAllocation.countDocuments({ examId: { $in: todayExamIds } }) : 0,
+    todayExamIds.length ? Attendance.countDocuments({ examId: { $in: todayExamIds } }) : 0,
+    Promise.all(
+      todayExams.map(async (exam) => {
+        const [allocated, present] = await Promise.all([
+          SeatAllocation.countDocuments({ examId: exam._id }),
+          Attendance.countDocuments({ examId: exam._id })
+        ]);
+
+        return {
+          examId: exam._id,
+          title: exam.title,
+          subjectCode: exam.subjectCode,
+          allocated,
+          present
+        };
+      })
+    ),
+    getHistoricalAttendanceTrend(10),
+    getUpcomingHallForecast(12)
   ]);
 
   const scanStats = scanStatsRaw.reduce<Record<string, number>>((acc, item) => {
@@ -56,24 +74,13 @@ export const getDashboardSummary = asyncHandler(async (_req: Request, res: Respo
   const invalidScans = Number(scanStats.invalid || 0);
   const manualScans = Number(scanStats.manual || 0);
   const validQrScans = Number(scanStats.valid || 0);
-  const scansToday = scansTodayLogs || todayPresent + duplicateScans + invalidScans + manualScans + validQrScans;
+
+  const scansToday =
+    scansTodayLogs || todayPresent + duplicateScans + invalidScans + manualScans + validQrScans;
 
   const attendanceRate = todaySeatAllocations
     ? Number(((todayPresent / todaySeatAllocations) * 100).toFixed(1))
     : 0;
-
-  const hallOccupancy = todayExams.map((exam) => ({
-    examId: exam._id,
-    title: exam.title,
-    subjectCode: exam.subjectCode,
-    allocated: 0,
-    present: 0
-  }));
-
-  for (const item of hallOccupancy) {
-    item.allocated = await SeatAllocation.countDocuments({ examId: item.examId });
-    item.present = await Attendance.countDocuments({ examId: item.examId });
-  }
 
   res.json({
     success: true,
@@ -97,7 +104,9 @@ export const getDashboardSummary = asyncHandler(async (_req: Request, res: Respo
       },
       todayExams,
       hallOccupancy,
-      recentLogs
+      recentLogs,
+      trend,
+      hallForecast
     }
   });
 });
@@ -151,10 +160,12 @@ export const getExamDashboard = asyncHandler(async (req: Request, res: Response)
 
   attendance.forEach((record) => {
     const hallId = record.hallId?._id?.toString() || 'unknown';
+
     if (!byHall[hallId]) {
       const hallName = (record.hallId as { name?: string })?.name || 'Unknown Hall';
       byHall[hallId] = { hallName, allocated: 0, present: 0 };
     }
+
     byHall[hallId].present += 1;
   });
 

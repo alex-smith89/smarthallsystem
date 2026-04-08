@@ -56,6 +56,35 @@ export type DashboardHallOccupancy = {
   present: number;
 };
 
+export type DashboardTrendPoint = {
+  date: string;
+  examCount: number;
+  allocatedCount: number;
+  presentCount: number;
+  attendanceRate: number;
+  capacityCount: number;
+  occupancyRate: number;
+};
+
+export type DashboardHallForecastItem = {
+  examId: string;
+  examTitle: string;
+  subjectCode: string;
+  examDate: string;
+  startTime: string;
+  hallId: string;
+  hallName: string;
+  hallBuilding: string;
+  hallFloor: string;
+  hallCapacity: number;
+  allocatedCount: number;
+  predictedPresentCount: number;
+  predictedAttendanceRate: number;
+  predictedOccupancyRate: number;
+  predictionBasis: 'ml' | 'fallback';
+  confidenceLabel: 'high' | 'medium' | 'low';
+};
+
 export type DashboardStudentLogRef =
   | string
   | {
@@ -97,6 +126,8 @@ export type DashboardSummaryData = {
   todayExams: DashboardExamOverview[];
   hallOccupancy: DashboardHallOccupancy[];
   recentLogs: DashboardRecentLog[];
+  trend: DashboardTrendPoint[];
+  hallForecast: DashboardHallForecastItem[];
 };
 
 async function parseJsonSafe<T>(response: Response): Promise<T | null> {

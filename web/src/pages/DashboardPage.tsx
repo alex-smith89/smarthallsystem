@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -10,7 +12,9 @@ import {
   ResponsiveContainer,
   Tooltip,
   XAxis,
-  YAxis
+  YAxis,
+  Line,
+  LineChart
 } from 'recharts';
 import LoadingScreen from '../components/LoadingScreen';
 import StatCard from '../components/StatCard';
@@ -18,10 +22,12 @@ import {
   api,
   getErrorMessage,
   type DashboardExamOverview,
+  type DashboardHallForecastItem,
   type DashboardHallOccupancy,
   type DashboardHallRef,
   type DashboardRecentLog,
-  type DashboardSummaryData
+  type DashboardSummaryData,
+  type DashboardTrendPoint
 } from '../lib/api';
 import { connectSocket, disconnectSocket } from '../lib/socket';
 
@@ -34,6 +40,12 @@ type HallChartItem = {
   name: string;
   allocated: number;
   present: number;
+};
+
+type TrendChartItem = {
+  date: string;
+  attendanceRate: number;
+  occupancyRate: number;
 };
 
 const pieColors = ['#36e4ff', '#7af6ff', '#41cfff', '#1596c2'];
@@ -96,7 +108,19 @@ export default function DashboardPage() {
     }));
   }, [dashboard]);
 
+  const trendChartData = useMemo<TrendChartItem[]>(() => {
+    if (!dashboard) return [];
+
+    return dashboard.trend.map((item: DashboardTrendPoint) => ({
+      date: item.date,
+      attendanceRate: item.attendanceRate,
+      occupancyRate: item.occupancyRate
+    }));
+  }, [dashboard]);
+
   const todaysExamCount = dashboard?.todayExams.length || 0;
+  const forecastCount = dashboard?.hallForecast.length || 0;
+
   const liveStatusText =
     todaysExamCount > 0
       ? `${todaysExamCount} active exam${todaysExamCount > 1 ? 's' : ''} today`
@@ -134,8 +158,8 @@ export default function DashboardPage() {
           <span className="section-eyebrow">Live overview</span>
           <h2>Exam operations dashboard</h2>
           <p>
-            View today&apos;s attendance flow, monitor hall occupancy, and track QR scanning
-            performance in one place.
+            View today&apos;s attendance flow, monitor hall occupancy, track QR scanning
+            performance, and forecast future hall load in one place.
           </p>
         </div>
 
@@ -150,6 +174,12 @@ export default function DashboardPage() {
             <span className="hero-metric-label">Attendance rate</span>
             <strong>{dashboard.cards.attendanceRate}%</strong>
             <small>Based on today&apos;s present vs seat allocations</small>
+          </div>
+
+          <div className="hero-metric-card">
+            <span className="hero-metric-label">Forecast sessions</span>
+            <strong>{forecastCount}</strong>
+            <small>Upcoming hall sessions with occupancy prediction</small>
           </div>
         </div>
       </section>
@@ -257,6 +287,177 @@ export default function DashboardPage() {
             </ResponsiveContainer>
           </div>
         </div>
+      </section>
+
+      <section className="dashboard-grid-two">
+        <div className="glass-panel chart-panel">
+          <div className="panel-header-row">
+            <div>
+              <span className="section-eyebrow">Attendance trend</span>
+              <h3>Recent attendance and occupancy pattern</h3>
+            </div>
+          </div>
+
+          {trendChartData.length > 0 ? (
+            <div className="chart-wrapper large-chart">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trendChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+                  <XAxis dataKey="date" stroke="#a9d8e6" />
+                  <YAxis stroke="#a9d8e6" domain={[0, 100]} />
+                  <Tooltip />
+                  <Legend />
+                  <Line
+                    type="monotone"
+                    dataKey="attendanceRate"
+                    stroke="#36e4ff"
+                    strokeWidth={3}
+                    dot={{ r: 3 }}
+                    name="Attendance %"
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="occupancyRate"
+                    stroke="#7af6ff"
+                    strokeWidth={3}
+                    dot={{ r: 3 }}
+                    name="Hall fill %"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="empty-state compact-empty-state">
+              <h4>No trend data yet</h4>
+              <p>Add more exam history to show attendance and hall usage trends.</p>
+            </div>
+          )}
+        </div>
+
+        <div className="glass-panel chart-panel">
+          <div className="panel-header-row">
+            <div>
+              <span className="section-eyebrow">Upcoming forecast</span>
+              <h3>Predicted hall occupancy</h3>
+            </div>
+          </div>
+
+          {dashboard.hallForecast.length > 0 ? (
+            <div className="chart-wrapper large-chart">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={dashboard.hallForecast.slice(0, 8)}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+                  <XAxis dataKey="hallName" stroke="#a9d8e6" />
+                  <YAxis stroke="#a9d8e6" domain={[0, 100]} />
+                  <Tooltip />
+                  <Legend />
+                  <Area
+                    type="monotone"
+                    dataKey="predictedAttendanceRate"
+                    stroke="#36e4ff"
+                    fill="#36e4ff"
+                    fillOpacity={0.18}
+                    name="Predicted attendance %"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="predictedOccupancyRate"
+                    stroke="#7af6ff"
+                    fill="#7af6ff"
+                    fillOpacity={0.12}
+                    name="Predicted occupancy %"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="empty-state compact-empty-state">
+              <h4>No forecast data yet</h4>
+              <p>Generate seat allocations and train the hall model to unlock predictions.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="glass-panel panel-section">
+        <div className="panel-header-row">
+          <div>
+            <span className="section-eyebrow">Forecast table</span>
+            <h3>Hall occupancy / attendance planning</h3>
+          </div>
+        </div>
+
+        {dashboard.hallForecast.length > 0 ? (
+          <div className="table-shell logs-table-shell">
+            <table>
+              <thead>
+                <tr>
+                  <th>Exam</th>
+                  <th>Hall</th>
+                  <th>Allocated</th>
+                  <th>Predicted Present</th>
+                  <th>Attendance %</th>
+                  <th>Occupancy %</th>
+                  <th>Source</th>
+                  <th>Confidence</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dashboard.hallForecast.map((item: DashboardHallForecastItem) => (
+                  <tr key={`${item.examId}-${item.hallId}`}>
+                    <td>
+                      <div className="table-primary-cell">
+                        <strong>{item.subjectCode}</strong>
+                        <span>
+                          {item.examDate} • {item.startTime}
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="table-primary-cell">
+                        <strong>{item.hallName}</strong>
+                        <span>
+                          {item.hallBuilding} • {item.hallFloor}
+                        </span>
+                      </div>
+                    </td>
+                    <td>{item.allocatedCount}</td>
+                    <td>{item.predictedPresentCount}</td>
+                    <td>{item.predictedAttendanceRate}%</td>
+                    <td>{item.predictedOccupancyRate}%</td>
+                    <td>
+                      <span
+                        className={`pill pill-${
+                          item.predictionBasis === 'ml' ? 'valid' : 'manual'
+                        }`}
+                      >
+                        {item.predictionBasis}
+                      </span>
+                    </td>
+                    <td>
+                      <span
+                        className={`pill pill-${
+                          item.confidenceLabel === 'high'
+                            ? 'valid'
+                            : item.confidenceLabel === 'medium'
+                              ? 'duplicate'
+                              : 'manual'
+                        }`}
+                      >
+                        {item.confidenceLabel}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="empty-state compact-empty-state">
+            <h4>No upcoming forecast rows</h4>
+            <p>Once future exams and seat allocations exist, the planning forecast will appear here.</p>
+          </div>
+        )}
       </section>
 
       <section className="dashboard-grid-two">

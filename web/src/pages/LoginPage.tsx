@@ -33,7 +33,7 @@ export default function LoginPage() {
     <div className="auth-page">
       <div className="auth-shell">
         <div className="auth-hero glass-panel">
-          <span className="auth-badge">Cyan / Aqua Glassmorphism</span>
+          <span className="auth-badge">Suraj Sah/Vimmm</span>
           <h1>Smart Digital Exam Hall Management</h1>
           <p>
             Secure admin access for seat allocation, QR attendance, real-time dashboard,

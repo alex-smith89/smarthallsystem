@@ -145,6 +145,33 @@ export type DashboardSummaryResponse = {
     allocated: number;
     present: number;
   }>;
+  trend: Array<{
+    date: string;
+    examCount: number;
+    allocatedCount: number;
+    presentCount: number;
+    attendanceRate: number;
+    capacityCount: number;
+    occupancyRate: number;
+  }>;
+  hallForecast: Array<{
+    examId: string;
+    examTitle: string;
+    subjectCode: string;
+    examDate: string;
+    startTime: string;
+    hallId: string;
+    hallName: string;
+    hallBuilding: string;
+    hallFloor: string;
+    hallCapacity: number;
+    allocatedCount: number;
+    predictedPresentCount: number;
+    predictedAttendanceRate: number;
+    predictedOccupancyRate: number;
+    predictionBasis: 'ml' | 'fallback';
+    confidenceLabel: 'high' | 'medium' | 'low';
+  }>;
   recentLogs: Array<{
     _id: string;
     result: string;

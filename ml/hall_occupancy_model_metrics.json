@@ -1,0 +1,33 @@
+{
+  "target": "attendance_rate",
+  "feature_count": 15,
+  "features": [
+    "exam_subject_code",
+    "exam_day_of_week",
+    "exam_month",
+    "exam_start_hour",
+    "exam_duration_minutes",
+    "hall_name",
+    "hall_building",
+    "hall_floor",
+    "hall_capacity",
+    "allocated_count",
+    "dominant_program",
+    "avg_semester",
+    "avg_seat_row",
+    "avg_seat_column",
+    "hall_fill_ratio"
+  ],
+  "metrics": {
+    "validation": {
+      "mae": 0.06422949797244944,
+      "rmse": 0.09172016782427539,
+      "r2": 0.038855766448608886
+    },
+    "test": {
+      "mae": 0.09851233649323925,
+      "rmse": 0.12432094616128787,
+      "r2": -0.17902948401889573
+    }
+  }
+}
