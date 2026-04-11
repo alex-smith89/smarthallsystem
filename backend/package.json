@@ -2,11 +2,14 @@
   "name": "smart-exam-web-backend",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "seed": "tsx src/scripts/seed.ts"
+    "seed": "tsx src/scripts/seed.ts",
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./jest.config.cjs",
+    "test:seatAllocator": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config ./jest.config.cjs --runTestsByPath ./src/utils/test/seatAllocator.test.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -20,13 +23,19 @@
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
+    "@jest/globals": "29.7.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/jest": "^29.5.14",
     "@types/jsonwebtoken": "^9.0.6",
     "@types/morgan": "^1.9.9",
     "@types/node": "^22.7.4",
+    "jest": "^29.7.0",
+    "jest-cli": "29.7.0",
+    "jest-util": "29.7.0",
+    "ts-jest": "^29.4.1",
     "tsx": "^4.19.1",
-    "typescript": "^5.6.2"
+    "typescript": "^5.9.3"
   }
 }

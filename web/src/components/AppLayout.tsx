@@ -103,7 +103,7 @@ export default function AppLayout() {
           <div className="brand-card">
             <div className="brand-badge">SE</div>
             <div>
-              <p className="brand-eyebrow">Cyan Glass Theme</p>
+              <p className="brand-eyebrow"></p>
               <h1>Smart Exam System</h1>
             </div>
           </div>
