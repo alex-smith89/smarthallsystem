@@ -6,15 +6,13 @@ module.exports = {
     '^.+\\.ts$': [
       'ts-jest',
       {
-        useESM: true,
-        tsconfig: '<rootDir>/tsconfig.test.json',
-      },
-    ],
+        tsconfig: '<rootDir>/tsconfig.test.json'
+      }
+    ]
   },
-  extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {
-    '^(\\.{1,2}/.*)\\.js$': '$1',
+    '^(\\.{1,2}/.*)\\.js$': '$1'
   },
   clearMocks: true,
-  verbose: true,
+  verbose: true
 };
