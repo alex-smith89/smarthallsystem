@@ -3,15 +3,15 @@ import dotenv from 'dotenv';
 import express, { Request, Response } from 'express';
 import morgan from 'morgan';
 
-import authRoutes from './routes/authRoutes';
-import studentRoutes from './routes/studentRoutes';
-import hallRoutes from './routes/hallRoutes';
-import examRoutes from './routes/examRoutes';
-import allocationRoutes from './routes/allocationRoutes';
-import attendanceRoutes from './routes/attendanceRoutes';
-import dashboardRoutes from './routes/dashboardRoutes';
-import reportsRoutes from './routes/reportsRoutes';
-import { errorHandler, notFound } from './middleware/errorMiddleware';
+import authRoutes from './routes/authRoutes.js';
+import studentRoutes from './routes/studentRoutes.js';
+import hallRoutes from './routes/hallRoutes.js';
+import examRoutes from './routes/examRoutes.js';
+import allocationRoutes from './routes/allocationRoutes.js';
+import attendanceRoutes from './routes/attendanceRoutes.js';
+import dashboardRoutes from './routes/dashboardRoutes.js';
+import reportsRoutes from './routes/reportsRoutes.js';
+import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 
 dotenv.config();
 
