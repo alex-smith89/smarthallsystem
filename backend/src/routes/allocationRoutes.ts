@@ -1,11 +1,13 @@
 import { Router } from 'express';
-import { generateAllocations, getAllocationsByExam } from '../controllers/allocationController.js';
-import { authorize, protect } from '../middleware/authMiddleware.js';
+import { protect } from '../middleware/authMiddleware.js';
+import {
+  generateAllocations,
+  getAllocationsByExam,
+} from '../controllers/allocationController.js';
 
 const router = Router();
 
-router.use(protect);
-router.post('/generate', authorize('admin'), generateAllocations);
-router.get('/exam/:examId', getAllocationsByExam);
+router.post('/generate', protect, generateAllocations);
+router.get('/:examId', protect, getAllocationsByExam);
 
 export default router;

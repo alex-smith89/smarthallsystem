@@ -601,7 +601,7 @@ export default function StudentsPage() {
 
         <form className="form-grid form-grid-2" onSubmit={handleSubmit}>
           <label className="form-field">
-            <span>Full Name</span>
+            <span>Full Name*</span>
             <input
               value={form.fullName}
               onChange={(e) => setForm((prev) => ({ ...prev, fullName: e.target.value }))}
@@ -611,7 +611,7 @@ export default function StudentsPage() {
           </label>
 
           <label className="form-field">
-            <span>Roll Number</span>
+            <span>Roll Number*</span>
             <input
               value={form.rollNumber}
               onChange={(e) => setForm((prev) => ({ ...prev, rollNumber: e.target.value }))}
@@ -621,7 +621,7 @@ export default function StudentsPage() {
           </label>
 
           <label className="form-field">
-            <span>Email</span>
+            <span>Email*</span>
             <input
               type="email"
               value={form.email}
@@ -632,7 +632,7 @@ export default function StudentsPage() {
           </label>
 
           <label className="form-field">
-            <span>Program</span>
+            <span>Program*</span>
             <input
               value={form.program}
               onChange={(e) => setForm((prev) => ({ ...prev, program: e.target.value }))}
@@ -642,7 +642,7 @@ export default function StudentsPage() {
           </label>
 
           <label className="form-field">
-            <span>Semester</span>
+            <span>Semester*</span>
             <input
               type="number"
               min="1"
